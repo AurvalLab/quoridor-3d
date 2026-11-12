@@ -1,0 +1,97 @@
+:root {
+  --ink: #f6efe2;
+  --ink-dim: rgba(246, 239, 226, 0.74);
+  --warm: #e6c48a;
+  --card: rgba(28, 18, 12, 0.72);
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body {
+  margin: 0; height: 100%; overflow: hidden; background: #140e0b; color: var(--ink);
+  font: 500 16px/1.45 Manrope, system-ui, sans-serif; touch-action: none; user-select: none;
+}
+#stage, #stage canvas { position: fixed; inset: 0; display: block; }
+#cam { display: none; }
+.hidden { display: none !important; }
+
+#preview {
+  position: fixed; right: 16px; bottom: 16px; width: 160px; height: 120px;
+  border-radius: 10px; border: 1px solid rgba(230, 196, 138, 0.4); opacity: 0.9;
+}
+
+.hud {
+  position: fixed; top: 14px; left: 0; right: 0; display: grid;
+  grid-template-columns: 1fr auto 1fr; gap: 12px; align-items: center;
+  padding: 0 22px; pointer-events: none;
+}
+.side { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--ink-dim); }
+.side.right { justify-content: flex-end; }
+.side.live { color: var(--ink); }
+.pip { width: 12px; height: 12px; border-radius: 50%; box-shadow: 0 0 0 2px rgba(246, 239, 226, 0.25); }
+.pip.pale { background: #e4c79a; }
+.pip.dark { background: #4a2e22; }
+#turn {
+  margin: 0; text-align: center; font: 400 22px/1.2 Fraunces, Georgia, serif;
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.55); max-width: 420px;
+}
+
+.turn-fence {
+  position: fixed; top: 62px; right: 18px; z-index: 3;
+  font: 700 13px/1 Manrope, system-ui, sans-serif; padding: 10px 14px; border-radius: 999px;
+  border: 1px solid rgba(230, 196, 138, 0.55); background: rgba(28, 18, 12, 0.72); color: var(--ink);
+  cursor: pointer;
+}
+
+.card {
+  position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(560px, calc(100vw - 28px));
+  max-height: calc(100vh - 28px); overflow: auto;
+  padding: 28px 28px 22px; border-radius: 18px; background: var(--card); backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px); border: 1px solid rgba(230, 196, 138, 0.2); text-align: center;
+}
+.card h1 { margin: 0; font: 400 64px/0.95 Fraunces, Georgia, serif; }
+.eyebrow { margin: 0 0 4px; letter-spacing: 0.42em; font-size: 12px; font-weight: 700; color: var(--warm); }
+.card p { margin: 10px 0; color: var(--ink-dim); }
+.card b { color: var(--ink); }
+.card .small { font-size: 13px; }
+.card .label { text-transform: uppercase; letter-spacing: 3px; font-size: 12px; font-weight: 700; }
+.card .big { margin: 0; font: 400 88px/1 Fraunces, Georgia, serif; color: var(--warm); }
+.err { color: #ffb4a0 !important; min-height: 1em; }
+
+.modes { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; margin-top: 14px; }
+button.mode {
+  background: transparent; color: var(--ink-dim); border: 1px solid rgba(230, 196, 138, 0.28);
+  padding: 8px 12px; font-size: 13px;
+}
+button.mode.on { color: #2a1d14; background: var(--warm); border-color: var(--warm); }
+
+.row { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; margin-top: 14px; }
+button {
+  font: 700 15px/1 Manrope, system-ui, sans-serif; padding: 13px 18px; border-radius: 999px; cursor: pointer;
+  border: 1px solid var(--warm); background: var(--warm); color: #2a1d14;
+}
+button.ghost { background: transparent; color: var(--ink); border-color: rgba(230, 196, 138, 0.45); }
+button:hover { filter: brightness(1.06); }
+
+.how { width: 180px; height: 88px; margin: 8px auto 0; display: block; }
+.how .finger { fill: none; stroke: var(--ink); stroke-width: 3.5; stroke-linecap: round; transform-origin: 26px 42px; }
+.how .index { animation: pinch-i 2.6s ease-in-out infinite; }
+.how .thumb { animation: pinch-t 2.6s ease-in-out infinite; }
+.how .pawn { fill: var(--warm); }
+.how .fence { fill: none; stroke: var(--warm); stroke-width: 3; transform-origin: 140px 43px; animation: turn 2.6s ease-in-out infinite; }
+@keyframes pinch-i { 0%, 18% { transform: rotate(-12deg); } 42%, 70% { transform: rotate(0); } 100% { transform: rotate(-12deg); } }
+@keyframes pinch-t { 0%, 18% { transform: rotate(12deg); } 42%, 70% { transform: rotate(0); } 100% { transform: rotate(12deg); } }
+@keyframes turn { 0%, 35% { transform: rotate(0deg); } 55%, 80% { transform: rotate(16deg); } 100% { transform: rotate(0deg); } }
+
+@media (max-width: 640px) {
+  .card { padding: 20px 16px 16px; }
+  .card h1 { font-size: 46px; }
+  .card .big { font-size: 64px; }
+  .hud { padding: 0 10px; gap: 6px; }
+  #turn { font-size: 16px; }
+  .side { font-size: 12px; }
+  .turn-fence { top: auto; bottom: 16px; right: 16px; }
+  #preview { width: 104px; height: 78px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .how .finger, .how .fence { animation: none; }
+}

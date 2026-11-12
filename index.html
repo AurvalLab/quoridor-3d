@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Quoridor</title>
+    <meta name="description" content="Quoridor, 步步为营. Walk a pawn to the far rank, or set a fence in the way. A webcam hand game." />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='4' y='6' width='24' height='20' rx='2' fill='%23c4925a'/%3E%3Crect x='14' y='10' width='4' height='12' rx='1' fill='%233a2418'/%3E%3C/svg%3E" />
+  </head>
+  <body>
+    <div id="stage"></div>
+    <video id="cam" playsinline muted></video>
+    <canvas id="preview" class="hidden" width="200" height="150" aria-hidden="true"></canvas>
+
+    <div id="hud" class="hud hidden">
+      <div class="side" id="side-0">
+        <span class="pip pale"></span>
+        <span id="name-0">You</span>
+        <span id="fences-0">10 fences</span>
+      </div>
+      <p id="turn">Your turn</p>
+      <div class="side right" id="side-1">
+        <span id="fences-1">10 fences</span>
+        <span id="name-1">Machine</span>
+        <span class="pip dark"></span>
+      </div>
+    </div>
+    <button id="b-turn" class="turn-fence hidden" type="button">Fence is vertical</button>
+
+    <section id="title" class="card hidden">
+      <p class="eyebrow">步步为营</p>
+      <h1>Quoridor</h1>
+      <svg class="how" viewBox="0 0 168 84" aria-hidden="true">
+        <path class="finger palm" d="M26 18 C 12 26, 10 58, 26 66" />
+        <path class="finger index" d="M26 20 C 52 8, 86 22, 96 36" />
+        <path class="finger thumb" d="M26 64 C 52 76, 86 62, 96 50" />
+        <circle class="pawn" cx="112" cy="44" r="8" />
+        <rect class="fence" x="136" y="18" width="9" height="50" rx="2" />
+      </svg>
+      <p>Walk a pawn to the far rank. Pinch, or close your hand, to pick up <b>your</b> pawn or a fence from your stack. Open your palm to set it down. Tilt your palm to turn a fence.</p>
+      <p>A fence covers two squares. It may touch another at the end. It may not cross one, and it may not seal either pawn off from its goal.</p>
+      <div class="modes" role="group" aria-label="Who plays">
+        <button type="button" id="m-ai" class="mode on" aria-pressed="true">Versus the machine</button>
+        <button type="button" id="m-hot" class="mode" aria-pressed="false">Two on this machine</button>
+      </div>
+      <div class="row">
+        <button id="b-cam" type="button">Use my camera</button>
+        <button id="b-mouse" class="ghost" type="button">Play with mouse or touch</button>
+      </div>
+      <p id="err" class="err"></p>
+      <p class="small">The camera picture stays on this device. Mouse: drag and let go. Right-click or R turns a fence. Space starts, M mutes.</p>
+    </section>
+
+    <section id="results" class="card hidden">
+      <p class="label">Moves</p>
+      <p id="r-score" class="big">0</p>
+      <p id="r-line"></p>
+      <p class="small">Pinch, click, or press Space to play again.</p>
+    </section>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
