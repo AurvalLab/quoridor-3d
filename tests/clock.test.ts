@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { clockValues, createClock, formatTime, syncClock } from '../src/clock';
+import { seedFor } from '../src/dice';
 import { advanceRoom, createRoom, joinRoom, roomCommand, snapshot, syncRoomClock } from '../src/room';
 
 describe('player elapsed clocks', () => {
@@ -28,6 +29,7 @@ describe('player elapsed clocks', () => {
   it('authoritatively pauses rooms on disconnect, restores the same time and resets on mutual rematch', () => {
     const room = createRoom('a'), both: [boolean, boolean] = [true, true];
     joinRoom(room, undefined, 'b');
+    room.pendingSeed = seedFor(0);
     roomCommand(room, 0, { type: 'ready', id: '1' }, both, 1000);
     roomCommand(room, 1, { type: 'ready', id: '2' }, both, 2000);
     roomCommand(room, 0, { type: 'action', id: '3', revision: room.revision, action: { type: 'pawn', c: 4, r: 1 } }, both, 5000);
@@ -42,6 +44,7 @@ describe('player elapsed clocks', () => {
     expect(snapshot(restored, both, 100_000).clock).toEqual({ elapsed: [3000, 4000], running: null });
     roomCommand(restored, 0, { type: 'rematch', id: '4' }, both, 100_000);
     expect(restored.game.phase).toBe('results');
+    restored.pendingSeed = seedFor(0);
     roomCommand(restored, 1, { type: 'rematch', id: '5' }, both, 101_000);
     expect(snapshot(restored, both, 101_000).clock).toEqual({ elapsed: [0, 0], running: 0 });
     expect(advanceRoom(restored, both, 102_000)).toBe(false);

@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
+import { seedFor } from '../src/dice';
 import { advanceRoom, createRoom, joinRoom, parseCommand, roomCommand, seatFor, snapshot } from '../src/room';
 
 const both: [boolean, boolean] = [true, true];
 function playing() {
   const room = createRoom('host-secret');
+  room.pendingSeed = seedFor(0);
   joinRoom(room, undefined, 'guest-secret');
   roomCommand(room, 0, { type: 'ready', id: 'r0' }, both);
   roomCommand(room, 1, { type: 'ready', id: 'r1' }, both);
@@ -35,6 +37,7 @@ describe('authoritative two-seat room', () => {
   it('authorizes actions by chosen color and preserves that color for rematches', () => {
     const room = createRoom('host');
     joinRoom(room, undefined, 'guest');
+    room.pendingSeed = seedFor(0);
     roomCommand(room, 0, { type: 'swap', id: 'swap', revision: room.revision }, both);
     roomCommand(room, 0, { type: 'ready', id: 'r0' }, both);
     roomCommand(room, 1, { type: 'ready', id: 'r1' }, both);
@@ -46,9 +49,11 @@ describe('authoritative two-seat room', () => {
     expect(roomCommand(room, 0, { type: 'swap', id: 'late', revision: room.revision }, both)).toBe('side-locked');
     room.game.phase = 'results';
     roomCommand(room, 0, { type: 'rematch', id: 'a' }, both);
+    room.pendingSeed = seedFor(0);
     roomCommand(room, 1, { type: 'rematch', id: 'b' }, both);
     expect(room.sides).toEqual([1, 0]);
     expect(room.game.turn).toBe(0);
+    expect(room.opening?.first).toBe(0);
   });
 
   it('rejects a simultaneous stale switch instead of switching both players back', () => {
@@ -82,6 +87,23 @@ describe('authoritative two-seat room', () => {
     state.ready[0] = false;
     expect(room.game.pawns[0].r).toBe(0);
     expect(room.ready[0]).toBe(true);
+  });
+
+  it('awards first move to the higher dice total and rerolls a tie before play', () => {
+    const room = createRoom('host');
+    joinRoom(room, undefined, 'guest');
+    room.pendingSeed = seedFor(1, true);
+    roomCommand(room, 0, { type: 'ready', id: 'a' }, both);
+    roomCommand(room, 1, { type: 'ready', id: 'b' }, both);
+    expect(room.opening?.attempts.length).toBeGreaterThan(1);
+    expect(room.opening?.attempts.slice(0, -1).every(attempt => attempt.totals[0] === attempt.totals[1])).toBe(true);
+    expect(room.opening?.first).toBe(1);
+    expect(room.game.turn).toBe(1);
+    expect(room.game.phase).toBe('play');
+    const move = { type: 'action' as const, id: 'm', revision: room.revision, action: { type: 'pawn' as const, c: 4, r: 7 } };
+    expect(roomCommand(room, 0, move, both)).toBe('not-your-turn');
+    expect(roomCommand(room, 1, { ...move, id: 'm2' }, both)).toBeNull();
+    expect(room.game.pawns[1]).toEqual({ c: 4, r: 7 });
   });
 
   it('starts only when both players are ready and online, including after reconnection', () => {

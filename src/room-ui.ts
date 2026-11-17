@@ -5,8 +5,7 @@ const COPY = {
     create: 'Create a room', codeLabel: 'Or enter a room code', join: 'Join', room: 'Room', copy: 'Copy invite link', copyShort: 'Invite',
     leave: 'Leave room', rematch: 'Play again', working: 'Connecting…', reconnecting: 'Connection lost. Reconnecting…',
     readyHint: 'Choose your controls, then select Ready. Play starts when both players are ready.',
-    startGame: 'Start game', prepare: 'Ready', cancelReady: 'Cancel ready', switchSide: 'Switch side',
-    sideLocked: 'Switch sides before either player is ready.',
+    startGame: 'Start game', prepare: 'Ready', cancelReady: 'Cancel ready',
     recovery: 'Keep this tab open. Refreshing reconnects; closing it may lose your seat.',
     waitingReady: 'You are ready. Waiting for your friend…', waitingFriend: 'Share the invite link with your friend.',
     you: 'You', friend: 'Friend', pale: 'Moon White', jade: 'Jade Green', empty: 'Waiting to join',
@@ -30,8 +29,7 @@ const COPY = {
     create: '创建房间', codeLabel: '或输入房间号', join: '加入', room: '房间', copy: '复制邀请链接', copyShort: '邀请',
     leave: '离开房间', rematch: '再来一局', working: '正在连接…', reconnecting: '连接中断，正在重连…',
     readyHint: '选择操作方式后点击“准备”。双方准备后自动开始。',
-    startGame: '开始对局', prepare: '准备', cancelReady: '取消准备', switchSide: '切换阵营',
-    sideLocked: '双方都未准备时可以切换阵营。',
+    startGame: '开始对局', prepare: '准备', cancelReady: '取消准备',
     recovery: '刷新可恢复对局，请保留此标签页；关闭后可能丢失席位。',
     waitingReady: '你已准备，等待好友…', waitingFriend: '将邀请链接发给好友，即可加入。',
     you: '你', friend: '好友', pale: '月牙白', jade: '翡翠绿', empty: '等待加入',
@@ -72,10 +70,6 @@ export function setupRoomUI(online: Online, leave: () => void, controls: () => {
         const name = `${session.player === p ? c.you : c.friend} · ${state.sides[p] === 0 ? c.pale : c.jade}`;
         const status = !state.joined[p] ? c.empty : !state.connected[p] ? c.offline : state.ready[p] ? c.ready : c.notReady;
         $('room-seat-' + p).textContent = `${name} — ${status}`;
-        const swap = $('b-side-' + p);
-        swap.classList.toggle('hidden', session.player !== p);
-        swap.toggleAttribute('disabled', !online.connected || online.pending || state.game.phase !== 'title' || state.ready.some(Boolean));
-        swap.title = c.sideLocked;
       }
       $('room-ready-hint').textContent = state.ready[session.player] ? c.waitingReady
         : !state.joined[1] ? c.waitingFriend + ' ' + c.readyHint : c.readyHint;
@@ -111,9 +105,6 @@ export function setupRoomUI(online: Online, leave: () => void, controls: () => {
     render();
   });
   $('b-rematch').addEventListener('click', () => { online.command({ type: 'rematch' }); });
-  for (const p of [0, 1]) $('b-side-' + p).addEventListener('click', () => {
-    if (online.state) online.command({ type: 'swap', revision: online.state.revision });
-  });
   panel.addEventListener('instructionschange', () => { notice = ''; render(); });
   return { render };
 }

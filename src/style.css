@@ -130,9 +130,7 @@ button.difficulty.locked { overflow: hidden; display: grid; place-content: cente
 .room-invite { display: flex; gap: 10px; align-items: center; justify-content: center; flex-wrap: wrap; font-size: 13px; }
 .room-invite strong { color: var(--warm); font-size: 22px; letter-spacing: 0.15em; user-select: text; }
 .room-seats { list-style: none; padding: 0; margin: 18px 0; display: grid; grid-auto-rows: 1fr; gap: 8px; text-align: left; font-size: 13px; color: var(--ink-dim); }
-.room-seats li { padding: 10px 12px; border: 1px solid rgba(230, 196, 138, 0.2); border-radius: 10px; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.room-seats li > span { min-width: 0; }
-.room-seats button { flex: 0 0 auto; padding: 8px 12px; font-size: 12px; }
+.room-seats li { padding: 10px 12px; border: 1px solid rgba(230, 196, 138, 0.2); border-radius: 10px; }
 .control-options { border: 0; padding: 0; margin: 18px 0 0; min-width: 0; }
 .control-options legend { padding: 0; margin: 0 auto; color: var(--ink-dim); font-size: 13px; }
 .control-option[aria-pressed="true"] { background: rgba(230,196,138,.16); border-color: var(--warm); color: var(--warm); }

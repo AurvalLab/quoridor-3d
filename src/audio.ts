@@ -82,6 +82,12 @@ export class Sound {
   /** A dull tick: the placement was refused. */
   no() { this.knock(96, 0.11, 0.07, 320); }
 
+  /** A die striking the board. `force` is the contact impulse. */
+  dice(force: number) {
+    const gain = Math.min(0.2, 0.05 + force * 0.012);
+    this.knock(240, 0.05, gain, 2600);
+  }
+
   win() {
     this.knock(220, 0.22, 0.16, 1400);
     const ctx = this.ctx;

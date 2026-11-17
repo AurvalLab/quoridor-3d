@@ -1,4 +1,5 @@
 import { applyAction, type Action } from './ai';
+import { playOut, type OpeningResult } from './dice';
 import { createGame, startGame, type Game, type Player } from './rules';
 import { clockValues, createClock, syncClock, type Clock } from './clock';
 
@@ -12,6 +13,10 @@ export interface RoomData {
   game: Game;
   revision: number;
   round: number;
+  /** The ceremony that awarded `game.turn`. Null until the first round starts. */
+  opening: OpeningResult | null;
+  /** Consumed the next time a round begins. Tests pin it; live rooms leave it unset. */
+  pendingSeed?: number;
 }
 export interface RoomSnapshot {
   sides: [Player, Player];
@@ -23,6 +28,7 @@ export interface RoomSnapshot {
   joined: [boolean, boolean];
   revision: number;
   round: number;
+  opening: OpeningResult | null;
 }
 export type RoomCommand =
   | { type: 'ready'; id: string }
@@ -37,7 +43,7 @@ export type RoomMessage =
   | { type: 'error'; code: RoomError; ack?: string };
 
 export function createRoom(token: string): RoomData {
-  return { sides: [0, 1], clock: createClock(), tokens: [token, null], ready: [false, false], rematch: [false, false], game: createGame('online'), revision: 0, round: 1 };
+  return { sides: [0, 1], clock: createClock(), tokens: [token, null], ready: [false, false], rematch: [false, false], game: createGame('online'), revision: 0, round: 1, opening: null };
 }
 
 export function seatFor(room: RoomData, token: string): Player | null {
@@ -58,7 +64,7 @@ export function joinRoom(room: RoomData, token: string | undefined, newToken: st
 export function snapshot(room: RoomData, connected: [boolean, boolean], now = Date.now()): RoomSnapshot {
   // A detached public copy: seat credentials must never be sent to the opponent.
   return structuredClone({ sides: room.sides, clock: { elapsed: clockValues(room.clock, now), running: room.clock.running }, game: room.game, ready: room.ready, rematch: room.rematch, connected,
-    joined: [true, room.tokens[1] !== null], revision: room.revision, round: room.round });
+    joined: [true, room.tokens[1] !== null], revision: room.revision, round: room.round, opening: room.opening ?? null });
 }
 
 export function parseCommand(value: unknown): RoomCommand | null {
@@ -105,20 +111,25 @@ export function roomCommand(room: RoomData, player: Player, command: RoomCommand
   return null;
 }
 
+function openRound(room: RoomData, connected: [boolean, boolean], now: number) {
+  const seed = room.pendingSeed ?? ((Math.random() * 0x100000000) >>> 0);
+  delete room.pendingSeed;
+  room.opening = playOut(seed);
+  startGame(room.game, 'online', room.opening.first);
+  room.clock = createClock();
+  syncRoomClock(room, connected, now);
+}
+
 export function advanceRoom(room: RoomData, connected: [boolean, boolean], now = Date.now()): boolean {
   if (!connected.every(Boolean)) return false;
   if (room.game.phase === 'title' && room.ready.every(Boolean)) {
-    startGame(room.game, 'online');
-    room.clock = createClock();
-    syncRoomClock(room, connected, now);
+    openRound(room, connected, now);
     return true;
   }
   if (room.game.phase === 'results' && room.rematch.every(Boolean)) {
-    startGame(room.game, 'online');
+    openRound(room, connected, now);
     room.rematch = [false, false];
     room.round++;
-    room.clock = createClock();
-    syncRoomClock(room, connected, now);
     return true;
   }
   return false;

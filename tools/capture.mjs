@@ -33,7 +33,7 @@ await page.waitForTimeout(2000);
 await shot('title');
 
 // The bot plays a full game: a deliberate miss, then a race to the far rank.
-await page.goto(BASE + '?bot=1&mute=1&seed=3');
+await page.goto(BASE + '?bot=1&mute=1&seed=42');
 await page.waitForTimeout(4000);
 await shot('play-early');
 await page.waitForTimeout(8000);
@@ -45,7 +45,7 @@ const g = await game();
 console.log(JSON.stringify(g));
 
 // the bot pinches to restart
-const restarted = await page.waitForFunction(() => window.__game.phase === 'play', null, { timeout: 8000 }).then(() => true, () => false);
+const restarted = await page.waitForFunction(() => window.__game.phase === 'play', null, { timeout: 15000 }).then(() => true, () => false);
 
 const ok = g.moves >= 8 && g.winner !== null && restarted && errors.length === 0;
 if (errors.length) console.log('errors:\n  ' + errors.join('\n  '));

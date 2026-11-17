@@ -15,7 +15,7 @@ try {
     const response = await route.fetch();
     await route.fulfill({ response, body: await response.text() + '\nwindow.__testInput = input;\n' });
   });
-  await page.goto((process.env.URL || 'http://127.0.0.1:43123/') + '?autostart=1&mute=1&mode=hotseat');
+  await page.goto((process.env.URL || 'http://127.0.0.1:43123/') + '?autostart=1&mute=1&mode=hotseat&seed=42');
   await page.waitForFunction(() => window.__testInput && window.__game?.phase === 'play').catch((e) => {
     throw new Error(`${e.message}; page errors: ${errors.join('; ')}`);
   });

@@ -20,7 +20,7 @@ const W = 1440, H = 900;
 const px = (p) => ({ x: p.x * W, y: p.y * H });
 const game = () => page.evaluate(() => window.__game);
 
-await page.goto(BASE + '?autostart=1&mute=1&mode=ai');
+await page.goto(BASE + '?autostart=1&mute=1&mode=ai&seed=42');
 await page.waitForFunction(() => window.__game?.phase === 'play');
 await page.waitForTimeout(400);
 if (top) await page.locator('#b-view').click();
