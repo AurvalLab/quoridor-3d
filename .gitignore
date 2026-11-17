@@ -5,3 +5,6 @@ public/models/
 captures/
 *.log
 .DS_Store
+/outputs/reference/
+.npm-cache/
+.wrangler/

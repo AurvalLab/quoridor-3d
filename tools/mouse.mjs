@@ -1,10 +1,14 @@
 // Mouse fallback: drag the pale pawn one square forward, then drag a fence onto the board.
 // Needs the dev server (npm run dev). URL=http://127.0.0.1:43123/ by default.
 import { chromium } from 'playwright';
+import assert from 'node:assert/strict';
+
+const top = process.argv.includes('--top');
 
 const BASE = process.env.URL || 'http://127.0.0.1:43123/';
 const gpu = process.platform === 'darwin' ? ['--use-gl=angle', '--use-angle=metal'] : ['--use-gl=angle'];
 const browser = await chromium.launch({
+  executablePath: process.env.CHROMIUM_PATH,
   args: [...gpu, '--ignore-gpu-blocklist', '--autoplay-policy=no-user-gesture-required', '--mute-audio'],
 });
 const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
@@ -19,6 +23,8 @@ const game = () => page.evaluate(() => window.__game);
 await page.goto(BASE + '?autostart=1&mute=1&mode=ai');
 await page.waitForFunction(() => window.__game?.phase === 'play');
 await page.waitForTimeout(400);
+if (top) await page.locator('#b-view').click();
+assert.equal((await game()).view, top ? 'top' : 'angled');
 
 const pawn = px(await page.evaluate(() => window.__game.cell(4, 0)));
 const step = px(await page.evaluate(() => window.__game.cell(4, 1)));
@@ -44,7 +50,7 @@ console.log('after pawn', JSON.stringify({ pawns: afterMove.pawns, turn: afterMo
 await page.waitForFunction(() => window.__game.turn === 0 && window.__game.phase === 'play', null, { timeout: 4000 }).catch(() => {});
 await page.keyboard.press('r');
 await drag(stock, slot);
-await page.screenshot({ path: 'captures/mouse-play.png' });
+await page.screenshot({ path: `captures/mouse-${top ? 'top' : 'angled'}-play.png` });
 const afterFence = await game();
 console.log('after fence', JSON.stringify({
   remaining: afterFence.remaining, fences: afterFence.fences, turn: afterFence.turn, moves: afterFence.moves, holding: afterFence.holding,
@@ -63,6 +69,17 @@ await page.mouse.down({ button: 'right' });
 await page.mouse.up({ button: 'right' });
 await page.waitForTimeout(120);
 const afterRight = await game();
+// Switching mid-carry cancels safely and waits for open fingers before another pickup.
+await page.keyboard.press('v');
+await page.waitForTimeout(150);
+const switched = await game();
+assert.equal(switched.view, top ? 'angled' : 'top');
+assert.equal(switched.holding, null);
+assert.equal(switched.moves, afterRight.moves);
+const reprojectedStock = px(await page.evaluate(() => window.__game.stock(0)));
+await page.mouse.move(reprojectedStock.x, reprojectedStock.y);
+await page.waitForTimeout(450);
+assert.equal((await game()).holding, null, 'still-closed fingers must not re-grab after switching');
 await page.mouse.up();
 await page.waitForTimeout(200);
 console.log('rotate', { before: held.holding, afterKey: afterKey.holding, afterRight: afterRight.holding });

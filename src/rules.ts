@@ -16,7 +16,7 @@ export const FENCE_COUNT = 10;
 export type Player = 0 | 1;
 export type Orientation = 'h' | 'v';
 export type Phase = 'title' | 'play' | 'results';
-export type Mode = 'ai' | 'hotseat';
+export type Mode = 'ai' | 'hotseat' | 'online';
 
 export interface Cell { c: number; r: number }
 

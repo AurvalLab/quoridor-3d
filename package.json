@@ -6,12 +6,16 @@
   "scripts": {
     "assets": "node scripts/assets.mjs",
     "dev": "npm run assets && vite --host",
-    "build": "npm run assets && tsc --noEmit && vite build",
+    "build": "npm run assets && tsc --noEmit && tsc -p tsconfig.worker.json && vite build",
+    "dev:rooms": "wrangler dev --local",
+    "deploy": "npm run build && wrangler deploy",
+    "test:rooms": "node tools/rooms.mjs",
     "preview": "vite preview --host",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "capture": "node tools/capture.mjs",
     "mouse": "node tools/mouse.mjs",
+    "pinch": "node tools/pinch.mjs",
     "fps": "node tools/fps.mjs",
     "loud": "node tools/loud.mjs"
   },
@@ -22,10 +26,12 @@
     "three": "~0.186.1"
   },
   "devDependencies": {
+    "@cloudflare/workers-types": "^5.20261116.1",
     "@types/three": "~0.186.0",
     "playwright": "^1.64.0",
     "typescript": "^7.0.2",
     "vite": "^8.3.4",
-    "vitest": "^5.0.4"
+    "vitest": "^5.0.4",
+    "wrangler": "^4.162.0"
   }
 }

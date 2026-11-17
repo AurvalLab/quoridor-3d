@@ -17,7 +17,7 @@ const tag = mobile ? 'm-' : '';
 
 // angle + metal is GPU rendering on macOS; elsewhere Chrome picks its own GL backend (drop --use-angle there)
 const gpu = process.platform === 'darwin' ? ['--use-gl=angle', '--use-angle=metal'] : ['--use-gl=angle'];
-const browser = await chromium.launch({ args: [...gpu, '--ignore-gpu-blocklist', '--autoplay-policy=no-user-gesture-required', '--mute-audio'] });
+const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH, args: [...gpu, '--ignore-gpu-blocklist', '--autoplay-policy=no-user-gesture-required', '--mute-audio'] });
 const ctx = await browser.newContext(mobile
   ? { viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true }
   : { viewport: { width: 1440, height: 900 } });

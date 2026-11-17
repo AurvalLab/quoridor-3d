@@ -3,6 +3,7 @@
 | What | Licence | Source |
 | --- | --- | --- |
 | hand-gesture-kit (`src/hand-gesture-kit/`) | MIT | https://github.com/abouchedidxcode/open-source-hands |
+| Quoridor MCTS AI (`src/vendor/quoridor-ai/`) | MIT, Copyright 2019 Kyutae Lee | https://github.com/gorisanson/quoridor-ai |
 | MediaPipe Tasks Vision (`@mediapipe/tasks-vision`) and the Hand Landmarker model (downloaded to `public/models/`) | Apache-2.0 | Google, https://github.com/google-ai-edge/mediapipe |
 | three.js | MIT | https://threejs.org |
 | Fraunces (font, via `@fontsource/fraunces`) | SIL Open Font License 1.1 | Undercase Type |
@@ -11,4 +12,6 @@
 
 Quoridor is a board game designed by Mirko Marchesi and published by Gigamic. This is an independent implementation of the rules for play in a browser. It is not affiliated with Gigamic.
 
-All sound is generated in the browser. There are no downloaded or generated audio or art files. The wood grain is painted on a canvas at runtime.
+All sound is generated in the browser. The exact angled-scene artwork (`src/assets/reference-table.png`) was supplied by the user. Its empty-background plate (`reference-clean.png`) and the 3D walnut texture (`salon-walnut.webp`) were produced with the built-in ImageGen tool for this project. Source-pixel masks provide the photographed pawns and stock; they are not substitute vector illustrations. Prompts and asset provenance are recorded in `outputs/reference-match/asset-provenance.md`.
+
+The alternate Three.js views use procedural board, tile, pawn, table, chair, rug, floorboard, tea-set, plant, book, pen, candelabra, coffer and pocket-watch geometry. Ceramic/metal reflections use three.js RoomEnvironment generated locally; no external HDR image is loaded. Static mesh batching uses three.js BufferGeometryUtils. Additional low-frequency wood maps are painted on canvas at runtime.

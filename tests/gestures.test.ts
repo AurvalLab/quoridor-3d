@@ -19,7 +19,7 @@ describe('gestures', () => {
       expect(run(P.open, hand).pinch).toBeLessThan(0.3);
     });
 
-    it(`${hand} fist, pinch and open palm are the poses the game uses to carry a piece`, () => {
+    it(`${hand} kit recognises fist, pinch and open palm independently`, () => {
       expect(run(P.fist, hand).pose).toBe('fist');
       expect(run(P.open, hand).pose).toBe('open');
       expect(run(P.pinch, hand).pinch).toBeGreaterThan(0.75);

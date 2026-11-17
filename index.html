@@ -15,21 +15,24 @@
     <div id="hud" class="hud hidden">
       <div class="side" id="side-0">
         <span class="pip pale"></span>
-        <span id="name-0">You</span>
-        <span id="fences-0">10 fences</span>
+        <div class="player-info"><strong id="color-0">Moon White</strong><span class="player-meta"><span id="name-0">You</span><span aria-hidden="true"> · </span><span id="fences-0">10 fences</span></span></div>
+        <time class="player-clock" id="time-0" title="Time used">00:00</time>
       </div>
       <p id="turn">Your turn</p>
       <div class="side right" id="side-1">
-        <span id="fences-1">10 fences</span>
-        <span id="name-1">Machine</span>
+        <time class="player-clock" id="time-1" title="Time used">00:00</time>
+        <div class="player-info"><strong id="color-1">Jade Green</strong><span class="player-meta"><span id="fences-1">10 fences</span><span aria-hidden="true"> · </span><span id="name-1">Machine</span></span></div>
         <span class="pip dark"></span>
       </div>
     </div>
-    <button id="b-turn" class="turn-fence hidden" type="button">Fence is vertical</button>
+    <button id="b-view" class="turn-fence view-toggle hidden" type="button" aria-pressed="false" title="Switch board view (V)">Top view · V</button>
 
-    <section id="title" class="card hidden">
-      <p class="eyebrow">步步为营</p>
-      <h1>Quoridor</h1>
+    <section id="title" class="card hidden" lang="en" aria-labelledby="game-title">
+      <button id="b-language" class="intro-language" type="button" lang="zh-CN" aria-label="Read instructions in Chinese">中文</button>
+      <p class="eyebrow" lang="zh-CN">步步为营</p>
+      <h1 id="game-title">Quoridor</h1>
+      <p class="intro-goal" data-copy="goal">Reach the opposite side before your opponent.</p>
+      <div class="intro-guide">
       <svg class="how" viewBox="0 0 168 84" aria-hidden="true">
         <path class="finger palm" d="M26 18 C 12 26, 10 58, 26 66" />
         <path class="finger index" d="M26 20 C 52 8, 86 22, 96 36" />
@@ -37,18 +40,78 @@
         <circle class="pawn" cx="112" cy="44" r="8" />
         <rect class="fence" x="136" y="18" width="9" height="50" rx="2" />
       </svg>
-      <p>Walk a pawn to the far rank. Pinch, or close your hand, to pick up <b>your</b> pawn or a fence from your stack. Open your palm to set it down. Tilt your palm to turn a fence.</p>
-      <p>A fence covers two squares. It may touch another at the end. It may not cross one, and it may not seal either pawn off from its goal.</p>
+      <ol class="how-steps">
+        <li><strong data-copy="pickTitle">Pick up</strong><span data-copy="pick">Pinch your thumb and index finger over your pawn or a fence in your box.</span></li>
+        <li><strong data-copy="aimTitle">Move &amp; turn</strong><span data-copy="aim">Move your hand to aim. Follow a horizontal or vertical gap to turn a fence.</span></li>
+        <li><strong data-copy="placeTitle">Place</strong><span data-copy="place">Separate your fingers to place it. Green marks a legal move.</span></li>
+      </ol>
+      </div>
+      <div class="intro-rules">
+        <h2 data-copy="rulesTitle">Fence rules</h2>
+        <p data-copy="rules">Each fence spans two squares. Ends may touch; fences cannot overlap or cross, and both pawns must keep a path to the goal.</p>
+      </div>
       <div class="modes" role="group" aria-label="Who plays">
-        <button type="button" id="m-ai" class="mode on" aria-pressed="true">Versus the machine</button>
-        <button type="button" id="m-hot" class="mode" aria-pressed="false">Two on this machine</button>
+        <button type="button" id="m-ai" class="mode on" aria-pressed="true" data-copy="machine">Versus machine</button>
+        <button type="button" id="m-hot" class="mode" aria-pressed="false" data-copy="twoPlayers">Two players</button>
+        <button type="button" id="m-online" class="mode" aria-pressed="false" data-copy="online">Online duel</button>
       </div>
-      <div class="row">
-        <button id="b-cam" type="button">Use my camera</button>
-        <button id="b-mouse" class="ghost" type="button">Play with mouse or touch</button>
+      <fieldset id="ai-difficulty" class="ai-difficulty">
+        <legend data-copy="difficulty">AI difficulty</legend>
+        <div class="difficulty-options">
+          <button type="button" class="difficulty on" data-level="novice" aria-pressed="true" data-copy="novice">Novice</button>
+          <button type="button" class="difficulty" data-level="average" aria-pressed="false" data-copy="average">Average</button>
+          <button type="button" class="difficulty" data-level="good" aria-pressed="false" data-copy="good">Challenging</button>
+          <button type="button" class="difficulty locked" disabled>
+            <svg class="chain" viewBox="0 0 120 52" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+              <defs><linearGradient id="chain-metal" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#e6cda0"/><stop offset=".48" stop-color="#927755"/><stop offset="1" stop-color="#4a3828"/></linearGradient></defs>
+              <g transform="rotate(-17 60 26)" fill="none" stroke-linecap="round">
+                <path d="M-12 26h144" stroke="#1b130d" stroke-width="13" opacity=".45"/>
+                <g stroke="url(#chain-metal)" stroke-width="5">
+                  <rect x="-13" y="19" width="27" height="14" rx="7"/><rect x="8" y="21" width="27" height="10" rx="5"/><rect x="29" y="19" width="27" height="14" rx="7"/><rect x="50" y="21" width="27" height="10" rx="5"/><rect x="71" y="19" width="27" height="14" rx="7"/><rect x="92" y="21" width="27" height="10" rx="5"/><rect x="113" y="19" width="27" height="14" rx="7"/>
+                </g>
+                <path d="M-7 20h15 M35 20h15 M77 20h15 M119 20h15" stroke="#f6e5c2" stroke-width="1" opacity=".6"/>
+              </g>
+            </svg>
+            <span data-copy="hell">Hell</span><small data-copy="locked">Locked</small>
+          </button>
+        </div>
+      </fieldset>
+      <div id="room-lobby" class="room-lobby hidden">
+        <div id="room-entry">
+          <button id="b-create-room" type="button" data-room-copy="create">Create a room</button>
+          <form id="room-join" class="room-join">
+            <label for="room-code" data-room-copy="codeLabel">Or enter a room code</label>
+            <div><input id="room-code" maxlength="6" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="ABC234" required /><button id="b-join-room" class="ghost" type="submit" data-room-copy="join">Join</button></div>
+          </form>
+        </div>
+        <div id="room-waiting" class="hidden">
+          <div class="room-invite"><span data-room-copy="room">Room</span> <strong id="room-number"></strong><button id="b-copy-room" type="button" class="ghost" data-room-copy="copy">Copy invite link</button></div>
+          <ul class="room-seats"><li><span id="room-seat-0"></span><button id="b-side-0" type="button" class="ghost" data-room-copy="switchSide">Switch side</button></li><li><span id="room-seat-1"></span><button id="b-side-1" type="button" class="ghost" data-room-copy="switchSide">Switch side</button></li></ul>
+          <p id="room-ready-hint" class="small"></p>
+          <p class="small" data-room-copy="recovery">Keep this tab open. Refreshing reconnects; closing it may lose your seat.</p>
+          <button id="b-lobby-leave" class="ghost" type="button" data-room-copy="leave">Leave room</button>
+        </div>
+        <p id="room-feedback" class="small" role="status"></p>
       </div>
-      <p id="err" class="err"></p>
-      <p class="small">The camera picture stays on this device. Mouse: drag and let go. Right-click or R turns a fence. Space starts, M mutes.</p>
+      <fieldset id="control-options" class="control-options">
+        <legend data-copy="controlsLabel">Control method</legend>
+        <div class="row">
+          <button id="b-cam" class="ghost control-option" type="button" aria-pressed="false">Use camera</button>
+          <button id="b-mouse" class="ghost control-option" type="button" aria-pressed="true" data-copy="pointer">Mouse or touch</button>
+        </div>
+      </fieldset>
+      <button id="b-start" class="start-game" type="button" data-room-copy="startGame">Start game</button>
+      <p id="err" class="err" role="status"></p>
+      <footer class="intro-footer">
+        <p class="small" data-copy="privacy">Your camera picture stays on this device.</p>
+        <p class="small" data-copy="mouseHelp">Mouse / touch: drag and release. Right-click also turns a fence.</p>
+        <ul class="intro-shortcuts" aria-label="Keyboard shortcuts">
+          <li><kbd>R</kbd><span data-copy="rotate">Turn fence</span></li>
+          <li><kbd>V</kbd><span data-copy="view">Switch view</span></li>
+          <li><kbd>Space</kbd><span data-copy="start">Start</span></li>
+          <li><kbd>M</kbd><span data-copy="mute">Mute</span></li>
+        </ul>
+      </footer>
     </section>
 
     <section id="results" class="card hidden">
@@ -56,7 +119,16 @@
       <p id="r-score" class="big">0</p>
       <p id="r-line"></p>
       <p class="small">Pinch, click, or press Space to play again.</p>
+      <div id="online-results" class="hidden">
+        <p id="rematch-status" class="small" role="status"></p>
+        <div class="row"><button id="b-rematch" type="button" data-room-copy="rematch">Play again</button><button id="b-results-leave" type="button" class="ghost" data-room-copy="leave">Leave room</button></div>
+      </div>
     </section>
+
+    <aside id="room-bar" class="room-bar hidden" aria-label="Online room">
+      <div><strong id="room-bar-label"></strong><button id="b-bar-copy" class="ghost" type="button" data-room-copy="copyShort">Invite</button><button id="b-bar-leave" class="ghost" type="button" data-room-copy="leave">Leave room</button></div>
+      <p id="room-bar-status" role="status"></p>
+    </aside>
 
     <script type="module" src="/src/main.ts"></script>
   </body>

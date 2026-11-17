@@ -15,21 +15,27 @@ import './style.css';
 import { drawHand } from './hand-gesture-kit';
 import { Input } from './input';
 import { PinchLatch } from './pinch';
-import { GrabLatch, RollLatch } from './grab';
+import { GrabLatch, RELEASE_HOLD_S, RollLatch } from './grab';
 import {
   createGame, fenceProblem, isLegalMove, legalMoves, releaseDrag, startGame, toggled,
   type Aim, type Mode, type Orientation,
 } from './rules';
 import { applyAction, chooseAction } from './ai';
-import { Scene, type DragView } from './scene';
+import { fenceOrientation, Scene, slotCenter, type DragView } from './scene';
 import { Sound } from './audio';
 import { Bot } from './bot';
+import { setupInstructions } from './instructions';
+import { Online } from './online';
+import { setupRoomUI } from './room-ui';
+import { clockValues, createClock, formatTime, syncClock, type Clock } from './clock';
 
 const q = new URLSearchParams(location.search);
 const flag = (k: string) => q.get(k) === '1';
 const BEST_KEY = 'quoridor.shortest';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
+const instructions = setupInstructions($('title'));
+const online = new Online();
 let queued: Mode = q.get('mode') === 'hotseat' ? 'hotseat' : 'ai';
 const game = createGame(queued);
 const scene = new Scene($('stage'));
@@ -45,10 +51,18 @@ sound.muted = flag('mute');
 
 let primed: Orientation = 'v';
 let drag: DragView | null = null;
-let aiLeft = -1;
+const simulations = { novice: 2500, average: 7500, good: 20000 } as const;
+let difficulty: keyof typeof simulations = 'novice';
+let aiWorker: Worker | null = null;
 let armAt = 0;
 let resultsAt = 0;
+let viewNeedsRelease = false;
 let best = 0;
+let localClock = createClock();
+let remoteClock: Clock = createClock();
+let controlChoice: 'camera' | 'pointer' = 'pointer';
+let cameraStarting = false;
+let controlRequest = 0;
 try { best = Number(localStorage.getItem(BEST_KEY)) || 0; } catch { /* storage blocked */ }
 
 function show(id: 'title' | 'results' | null) {
@@ -57,14 +71,23 @@ function show(id: 'title' | 'results' | null) {
 }
 
 function begin() {
+  aiWorker?.terminate();
+  aiWorker = null;
   sound.start();
+  if (controlChoice === 'pointer' && !bot) input.setMode('pointer');
+  if (queued === 'online') {
+    const ready = !!online.session && !!online.state?.ready[online.session.player];
+    online.command({ type: ready ? 'unready' : 'ready' });
+    return;
+  }
   startGame(game, queued);
+  localClock = createClock();
+  syncClock(localClock, game.turn, performance.now());
   grab.reset();
   latch.reset();
   roll.reset();
   primed = 'v';
   drag = null;
-  aiLeft = -1;
   armAt = performance.now() + 500;
   show(null);
   paintMode();
@@ -73,8 +96,9 @@ function begin() {
 function finish() {
   sound.win();
   const ai = game.mode === 'ai';
-  const you = game.winner === 0;
-  const who = ai
+  const remote = game.mode === 'online';
+  const you = game.winner === (remote ? online.player : 0);
+  const who = remote ? (you ? 'You reached the far rank.' : 'Your friend reached the far rank.') : ai
     ? (you ? 'You reached the far rank.' : 'The machine reached your rank.')
     : (you ? 'Pale reached the far rank.' : 'Dark reached the near rank.');
   let line = `${who} ${game.moves} moves.`;
@@ -97,40 +121,139 @@ function paintMode() {
   $('m-hot').classList.toggle('on', queued === 'hotseat');
   $('m-ai').setAttribute('aria-pressed', String(queued === 'ai'));
   $('m-hot').setAttribute('aria-pressed', String(queued === 'hotseat'));
+  $('m-online').classList.toggle('on', queued === 'online');
+  $('m-online').setAttribute('aria-pressed', String(queued === 'online'));
+  $('title').classList.toggle('online-selected', queued === 'online');
+  $('room-lobby').classList.toggle('hidden', queued !== 'online');
+  $('ai-difficulty').classList.toggle('hidden', queued !== 'ai');
+  roomUI.render();
 }
 
-$('m-ai').addEventListener('click', () => { queued = 'ai'; paintMode(); });
-$('m-hot').addEventListener('click', () => { queued = 'hotseat'; paintMode(); });
+function cancelCarry() {
+  drag = null; grab.reset(); latch.reset(); roll.reset(); viewNeedsRelease = true;
+}
+function selectMode(mode: Mode) {
+  if (mode === queued) return;
+  aiWorker?.terminate();
+  aiWorker = null;
+  if (mode !== 'online') online.disconnect();
+  controlRequest++;
+  controlChoice = 'pointer';
+  input.hands.tracker.stop();
+  input.setMode('none');
+  $('preview').classList.add('hidden');
+  if (!cameraStarting) instructions.setCameraState('idle');
+  queued = mode;
+  scene.setPlayer(0);
+  Object.assign(game, createGame(mode));
+  cancelCarry();
+  show('title');
+  paintMode();
+}
+const roomUI = setupRoomUI(online, () => { selectMode('ai'); }, () => ({ choice: controlChoice,
+  ready: controlChoice === 'pointer' || input.mode === 'camera', busy: cameraStarting }));
+let appliedSnapshot = online.state;
+online.onChange = () => {
+  const state = online.state;
+  scene.setPlayer(online.player ?? 0);
+  if (state && state !== appliedSnapshot) {
+    appliedSnapshot = state;
+    const previousPhase = game.phase, previousMoves = game.moves, previousFences = game.fences.length;
+    Object.assign(game, structuredClone(state.game));
+    remoteClock = { elapsed: [...state.clock.elapsed], running: state.clock.running, since: performance.now() };
+    cancelCarry();
+    if (game.phase !== 'title' && input.mode === 'none') input.setMode('pointer');
+    if (game.phase === 'play' && previousPhase !== 'play') { sound.start(); armAt = performance.now() + 500; }
+    if (game.moves > previousMoves) sound.down(game.fences.length > previousFences ? 'fence' : 'pawn');
+    if (game.phase === 'results' && previousPhase !== 'results') finish();
+    else show(game.phase === 'title' ? 'title' : game.phase === 'results' ? 'results' : null);
+  }
+  if (!online.connected) syncClock(remoteClock, null, performance.now());
+  if (!online.canPlay) cancelCarry();
+  roomUI.render();
+};
+$('m-ai').addEventListener('click', () => { selectMode('ai'); });
+$('m-hot').addEventListener('click', () => { selectMode('hotseat'); });
+$('m-online').addEventListener('click', () => { selectMode('online'); });
+for (const button of document.querySelectorAll<HTMLButtonElement>('[data-level]')) {
+  button.addEventListener('click', () => {
+    difficulty = button.dataset.level as keyof typeof simulations;
+    for (const option of document.querySelectorAll<HTMLButtonElement>('[data-level]')) {
+      const selected = option === button;
+      option.classList.toggle('on', selected);
+      option.setAttribute('aria-pressed', String(selected));
+    }
+  });
+}
 paintMode();
 
 $('b-cam').addEventListener('click', async () => {
+  if (queued === 'online' && !online.connected) return;
+  if (cameraStarting) return;
+  if (controlChoice === 'camera' && input.mode === 'camera') return;
+  const request = ++controlRequest;
+  controlChoice = 'camera';
+  cameraStarting = true;
   sound.start();
-  $('err').textContent = '';
-  $('b-cam').textContent = 'Starting the camera…';
+  instructions.setCameraState('starting');
   try {
     await input.startCamera();
+    if (request !== controlRequest) {
+      input.hands.tracker.stop(); input.setMode(game.phase === 'play' ? 'pointer' : 'none'); return;
+    }
     $('preview').classList.remove('hidden');
-    begin();
   } catch {
-    $('b-cam').textContent = 'Use my camera';
-    $('err').textContent = 'The camera is unavailable or was blocked. You can still play with the mouse or touch.';
+    if (request === controlRequest) instructions.setCameraState('error');
+  } finally {
+    cameraStarting = false;
+    if (request !== controlRequest || input.mode === 'camera') instructions.setCameraState('idle');
+    roomUI.render();
   }
 });
-$('b-mouse').addEventListener('click', () => { input.setMode('pointer'); begin(); });
-$('b-turn').addEventListener('click', () => input.requestRotate());
+$('b-mouse').addEventListener('click', () => {
+  if (cameraStarting) return;
+  controlRequest++;
+  controlChoice = 'pointer';
+  input.hands.tracker.stop();
+  input.setMode('pointer');
+  $('preview').classList.add('hidden');
+  instructions.setCameraState('idle');
+});
+$('b-start').addEventListener('click', () => { if (!$<HTMLButtonElement>('b-start').disabled) begin(); });
+function toggleView() {
+  if (game.phase !== 'play') return;
+  // A new projection must not drop or re-grab the piece under a still-closed hand.
+  drag = null;
+  grab.reset();
+  latch.reset();
+  viewNeedsRelease = true;
+  scene.view = scene.view === 'angled' ? 'top' : 'angled';
+  scene.resize();
+}
+$('b-view').addEventListener('click', toggleView);
 addEventListener('keydown', (e) => {
   if (e.repeat) return;
-  if (e.code === 'Space' && game.phase !== 'play') {
+  if (e.target instanceof Element && e.target.closest('input, textarea, select')) return;
+  if (e.code === 'Space' && game.phase !== 'play' && !(e.target instanceof Element && e.target.closest('button'))) {
+    if (game.mode === 'online' && game.phase === 'results') return;
+    if (game.phase === 'title' && $<HTMLButtonElement>('b-start').disabled) return;
+    e.preventDefault();
     if (input.mode === 'none') input.setMode('pointer');
     begin();
   }
   if (e.key === 'm' || e.key === 'M') sound.setMuted(!sound.muted);
+  if (e.code === 'KeyV' && !e.ctrlKey && !e.metaKey && !e.altKey) toggleView();
 });
 addEventListener('resize', () => scene.resize());
 
 if (bot) input.setMode('bot');
 if (bot || flag('autostart')) { if (input.mode === 'none') input.setMode('pointer'); begin(); }
 else show('title');
+if (q.has('room') && !bot && !flag('autostart')) {
+  selectMode('online');
+  $<HTMLInputElement>('room-code').value = q.get('room') ?? '';
+  void online.open(q.get('room') ?? '');
+}
 
 const pv = $<HTMLCanvasElement>('preview');
 const pg = pv.getContext('2d')!;
@@ -173,48 +296,61 @@ function frame(now: number) {
   }
   input.update(dt);
   const h = input.hand;
-  const point = h ? scene.boardPoint(h.screen.x, h.screen.y) : null;
-  const hit = point ? scene.classify(point.x, point.z, game.pawns) : null;
-  const human = game.phase === 'play' && (game.mode === 'hotseat' || game.turn === 0);
-  const useRoll = input.mode === 'camera' || input.mode === 'bot';
+  if (!h?.pinching) viewNeedsRelease = false;
+  const point = h ? scene.boardPoint(h.screen.x, h.screen.y, !drag) : null;
+  const hit = point ? scene.classify(point.x, point.z, game.pawns, !drag) : null;
+  const human = game.phase === 'play' && (game.mode === 'online' ? online.canPlay : game.mode === 'hotseat' || game.turn === 0);
+  const autoFence = input.mode === 'camera';
+  const useRoll = input.mode === 'bot';
 
   if (input.consumeRotate()) {
     if (drag?.kind === 'fence') { drag.o = toggled(drag.o); drag.manual = true; }
     else primed = toggled(primed);
   }
-  // A manual turn (right-click, R, the button) sticks for this carry. Palm roll keeps driving otherwise.
-  if (drag?.kind === 'fence' && useRoll && h && !drag.manual) {
+  // Manual turns lock this carry. Only the synthetic bot uses roll; camera hands aim along a gap.
+  if (drag?.kind === 'fence' && useRoll && h?.pinching && !drag.manual) {
     drag.o = roll.update(h.roll);
   }
 
-  const edge = grab.update(h ? { pinch: h.pinch, openness: h.openness, pose: h.pose } : null, dt);
   const armed = now >= armAt;
+  const canGrab = armed && !viewNeedsRelease && human && hit && (hit.pawn === game.turn || (hit.stock === game.turn && game.remaining[game.turn] > 0));
+  const edge = grab.update(h && (drag || canGrab) ? h : null, input.mode === 'pointer' && h && !h.pinching ? RELEASE_HOLD_S : dt);
   if (armed && human && edge === 'grab' && hit && !drag) {
     if (hit.pawn === game.turn) {
       drag = { kind: 'pawn', o: 'v', x: hit.x, z: hit.z, legal: false, cell: null, slot: null, owner: game.turn, manual: false };
       sound.lift();
     } else if (hit.stock === game.turn && game.remaining[game.turn] > 0) {
       const o = useRoll ? roll.o : primed;
-      drag = { kind: 'fence', o, x: hit.x, z: hit.z, legal: false, cell: null, slot: null, owner: game.turn, manual: !useRoll };
+      drag = { kind: 'fence', o, x: hit.x, z: hit.z, legal: false, cell: null, slot: null, owner: game.turn, manual: !useRoll && !autoFence };
       sound.lift();
     }
   }
-  if (drag && hit) {
-    drag.x = hit.x;
-    drag.z = hit.z;
-    drag.cell = hit.cell;
-    drag.slot = hit.slot;
+  // Freeze the destination throughout release grace; re-pinching resumes the carry.
+  if (drag && h && (h.pinching || (input.mode === 'pointer' && edge === 'release'))) {
+    if (hit) { drag.x = hit.x; drag.z = hit.z; }
+    drag.cell = hit?.cell ?? null;
+    drag.slot = hit?.slot ?? null;
+    if (drag.kind === 'fence' && autoFence && hit?.slot && !drag.manual) {
+      drag.o = fenceOrientation(hit.x, hit.z, hit.slot, drag.o);
+    }
+    if (drag.kind === 'fence' && drag.slot) Object.assign(drag, slotCenter(drag.slot.c, drag.slot.r));
     drag.legal = drag.kind === 'pawn'
-      ? !!hit.cell && isLegalMove(game, hit.cell)
-      : !!hit.slot && fenceProblem(game, { c: hit.slot.c, r: hit.slot.r, o: drag.o }) === null;
+      ? !!drag.cell && isLegalMove(game, drag.cell)
+      : !!drag.slot && fenceProblem(game, { c: drag.slot.c, r: drag.slot.r, o: drag.o }) === null;
   }
   if (edge === 'release' && drag) {
-    if (human) {
-      const res = releaseDrag(game, drag.kind === 'pawn' ? { kind: 'pawn' } : { kind: 'fence', o: drag.o }, aimOf(drag.kind, hit));
+    if (human && game.mode === 'online') {
+      const aim = aimOf(drag.kind, drag);
+      if (drag.legal && aim.kind !== 'none') {
+        const action = drag.kind === 'pawn' ? { type: 'pawn' as const, c: aim.c, r: aim.r }
+          : { type: 'fence' as const, c: aim.c, r: aim.r, o: drag.o };
+        if (!online.command({ type: 'action', revision: online.state!.revision, action })) sound.no();
+      } else sound.no();
+    } else if (human) {
+      const res = releaseDrag(game, drag.kind === 'pawn' ? { kind: 'pawn' } : { kind: 'fence', o: drag.o }, aimOf(drag.kind, drag));
       if (res.ok) {
         sound.down(drag.kind);
-        if (game.phase === 'results') finish();
-        else if (game.mode === 'ai' && game.turn === 1) aiLeft = 0.32;
+        if (game.winner !== null) finish();
       } else sound.no();
     }
     drag = null;
@@ -224,24 +360,36 @@ function frame(now: number) {
   }
 
   const thinking = game.mode === 'ai' && game.phase === 'play' && game.turn === 1 && !drag;
-  if (thinking) {
-    if (aiLeft < 0) aiLeft = 0.32;
-    aiLeft -= dt;
-    if (aiLeft <= 0) {
-      const action = chooseAction(game);
+  if (thinking && !aiWorker) {
+    const snapshot = game.moves;
+    const play = (action: ReturnType<typeof chooseAction>) => {
+      if (game.phase !== 'play' || game.mode !== 'ai' || game.turn !== 1 || game.moves !== snapshot) return;
+      if (!action || !applyAction(game, action)) action = chooseAction(game);
+      else {
+        sound.down(action.type === 'pawn' ? 'pawn' : 'fence');
+        if (game.winner !== null) finish();
+        return;
+      }
       if (action && applyAction(game, action)) {
         sound.down(action.type === 'pawn' ? 'pawn' : 'fence');
-        if (game.phase === 'results') finish();
+        if (game.winner !== null) finish();
       }
-      aiLeft = -1;
-    }
-  } else if (game.turn !== 1) aiLeft = -1;
+    };
+    try {
+      const worker = new Worker(new URL('./ai-worker.ts', import.meta.url), { type: 'module' });
+      aiWorker = worker;
+      worker.onmessage = (event) => { worker.terminate(); if (aiWorker === worker) { aiWorker = null; play(event.data); } };
+      worker.onerror = () => { worker.terminate(); if (aiWorker === worker) { aiWorker = null; play(null); } };
+      worker.postMessage({ game, simulations: simulations[difficulty] });
+    } catch { aiWorker = null; play(null); }
+  }
 
-  const pinchEdge = latch.update(h ? h.pinch : 0);
-  if (pinchEdge === 'press' && game.phase === 'results' && now - resultsAt > 1500) begin();
+  const pinchEdge = latch.update(h?.pinching ? 1 : 0);
+  if (pinchEdge === 'press' && game.phase === 'results' && game.mode !== 'online' && now - resultsAt > 1500) begin();
 
   const showLegal = human && drag?.kind !== 'fence';
   const legal = showLegal ? legalMoves(game, game.turn) : [];
+  paintHud(thinking);
   scene.render({
     pawns: game.pawns,
     fences: game.fences,
@@ -255,15 +403,25 @@ function frame(now: number) {
     dt,
     t,
   });
-  paintHud(thinking);
   drawPreview();
 }
 requestAnimationFrame(frame);
 
 function paintHud(thinking: boolean) {
   const ai = game.mode === 'ai';
-  $('name-0').textContent = ai ? 'You' : 'Pale';
-  $('name-1').textContent = ai ? 'Machine' : 'Dark';
+  const remote = game.mode === 'online';
+  $('name-0').textContent = remote ? (online.player === 0 ? 'You' : 'Friend') : ai ? 'You' : 'Player 1';
+  $('name-1').textContent = remote ? (online.player === 1 ? 'You' : 'Friend') : ai ? 'Machine' : 'Player 2';
+  const chinese = $('title').lang === 'zh-CN';
+  $('color-0').textContent = chinese ? '月牙白' : 'Moon White';
+  $('color-1').textContent = chinese ? '翡翠绿' : 'Jade Green';
+  const clockNow = performance.now();
+  if (!remote) syncClock(localClock, game.phase === 'play' ? game.turn : null, clockNow);
+  const elapsed = clockValues(remote ? remoteClock : localClock, clockNow);
+  for (const player of [0, 1] as const) {
+    const node = $<HTMLTimeElement>('time-' + player), value = formatTime(elapsed[player]);
+    if (node.textContent !== value) { node.textContent = value; node.dateTime = `PT${Math.floor(elapsed[player] / 1000)}S`; }
+  }
   $('fences-0').textContent = `${game.remaining[0]} fences`;
   $('fences-1').textContent = `${game.remaining[1]} fences`;
   $('side-0').classList.toggle('live', game.phase === 'play' && game.turn === 0);
@@ -271,12 +429,19 @@ function paintHud(thinking: boolean) {
   let turn = thinking ? 'The machine is choosing' : game.turn === 0
     ? (ai ? 'Your turn' : "Pale's turn")
     : (ai ? "Machine's turn" : "Dark's turn");
-  if (drag?.kind === 'pawn') turn = drag.legal ? 'Open your hand on the green square' : 'That square is closed';
-  if (drag?.kind === 'fence') turn = drag.legal ? 'Open your hand to set the fence' : 'That fence will not sit there';
+  if (remote) turn = !online.connected ? 'Connection lost · reconnecting' : !online.state?.connected.every(Boolean)
+    ? 'Friend disconnected · waiting' : online.pending ? 'Confirming move…' : game.turn === online.player ? 'Your turn' : "Friend's turn";
+  if (drag?.kind === 'pawn') turn = drag.legal ? (input.mode === 'camera' ? 'Separate your fingers on the green square' : 'Release on the green square') : 'That square is closed';
+  if (drag?.kind === 'fence') turn = drag.legal ? (input.mode === 'camera' ? 'Separate your fingers to set the fence' : 'Release to place the fence') : 'That fence will not sit there';
+  if (drag?.kind === 'fence' && input.mode === 'camera') {
+    turn = !drag.slot ? 'Aim along a gap to turn the fence' : drag.legal
+      ? `${drag.o === 'h' ? 'Horizontal' : 'Vertical'} · separate fingers to place`
+      : 'That fence will not sit there';
+  }
   $('turn').textContent = turn;
-  const o = drag?.kind === 'fence' ? drag.o : primed;
-  $('b-turn').textContent = o === 'h' ? 'Fence is horizontal' : 'Fence is vertical';
-  $('b-turn').classList.toggle('hidden', game.phase !== 'play' || input.mode === 'camera' || input.mode === 'bot');
+  $('b-view').classList.toggle('hidden', game.phase !== 'play');
+  $('b-view').textContent = scene.view === 'top' ? 'Angled view · V' : 'Top view · V';
+  $('b-view').setAttribute('aria-pressed', String(scene.view === 'top'));
 }
 
 Object.defineProperty(window, '__game', {
@@ -291,10 +456,14 @@ Object.defineProperty(window, '__game', {
     fences: game.fences.length,
     holding: drag ? { kind: drag.kind, o: drag.o, legal: drag.legal } : null,
     input: input.mode,
-    hand: input.hand ? { x: input.hand.screen.x, y: input.hand.screen.y, pinch: input.hand.pinch, roll: input.hand.roll } : null,
+    view: scene.view,
+    hand: input.hand ? { x: input.hand.screen.x, y: input.hand.screen.y, pinch: input.hand.pinch, pinching: input.hand.pinching, roll: input.hand.roll } : null,
     fps: Math.round(fps),
     dpr: scene.renderer.getPixelRatio(),
     best,
+    elapsed: clockValues(game.mode === 'online' ? remoteClock : localClock, performance.now()),
+    room: online.session ? { code: online.session.code, player: online.player, connected: online.connected,
+      revision: online.state?.revision, pending: online.pending, ready: online.state?.ready, round: online.state?.round } : null,
     cell: (c: number, r: number) => scene.cellToScreen(c, r),
     slot: (c: number, r: number) => scene.slotToScreen(c, r),
     stock: (p: 0 | 1) => scene.stockToScreen(p),

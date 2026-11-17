@@ -1,6 +1,6 @@
 /**
  * ?bot=1. A synthetic player that picks pieces up and sets them down through the real gesture
- * engine: move to the pawn or the stack, close the hand, carry, open the palm. The first carry
+ * engine: move to the pawn or the stack, pinch, carry, release. The first carry
  * is a miss, on purpose, so a red square shows up and the drop is refused.
  */
 import { chooseAction } from './ai';
@@ -18,7 +18,6 @@ interface Plan {
   from: Point;
   to: Point;
   roll: number;
-  useFist: boolean;
 }
 
 type Step = 'seek' | 'close' | 'carry' | 'open' | 'settle';
@@ -34,7 +33,6 @@ export class Bot {
   private dwell = 0;
   private plan: Plan | null = null;
   private didMiss = false;
-  private grabs = 0;
   private resultsT = 0;
 
   update(g: Game, dt: number, project: Projector, aspect: number): BotHand {
@@ -65,7 +63,7 @@ export class Bot {
     const plan = this.plan;
     this.roll = plan.roll;
     this.stepT += dt;
-    const closed: Shape = plan.useFist ? 'fist' : 'pinch';
+    const closed: Shape = 'pinch';
 
     if (this.step === 'seek') {
       this.shape = 'open';
@@ -98,24 +96,21 @@ export class Bot {
   }
 
   private nextPlan(g: Game, project: Projector): Plan {
-    this.grabs++;
-    const useFist = this.grabs % 3 === 0;
     if (!this.didMiss) {
       this.didMiss = true;
       const from = g.pawns[0];
       const bad = badCell(g, from);
-      return { from: project.cell(from.c, from.r), to: project.cell(bad.c, bad.r), roll: 0, useFist };
+      return { from: project.cell(from.c, from.r), to: project.cell(bad.c, bad.r), roll: 0 };
     }
     const action = chooseAction(g);
     if (!action || action.type === 'pawn') {
       const to = action && action.type === 'pawn' ? action : (legalMoves(g, 0)[0] ?? g.pawns[0]);
-      return { from: project.cell(g.pawns[0].c, g.pawns[0].r), to: project.cell(to.c, to.r), roll: 0, useFist };
+      return { from: project.cell(g.pawns[0].c, g.pawns[0].r), to: project.cell(to.c, to.r), roll: 0 };
     }
     return {
       from: project.stock(0),
       to: project.slot(action.c, action.r),
       roll: action.o === 'h' ? Math.PI / 2 : 0,
-      useFist: false,
     };
   }
 
