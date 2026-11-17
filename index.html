@@ -11,6 +11,7 @@
     <div id="stage"></div>
     <video id="cam" playsinline muted></video>
     <canvas id="preview" class="hidden" width="200" height="150" aria-hidden="true"></canvas>
+    <canvas id="fireworks" class="fireworks hidden" aria-hidden="true"></canvas>
 
     <div id="hud" class="hud hidden">
       <div class="side" id="side-0">
@@ -123,6 +124,14 @@
         <p id="rematch-status" class="small" role="status"></p>
         <div class="row"><button id="b-rematch" type="button" data-room-copy="rematch">Play again</button><button id="b-results-leave" type="button" class="ghost" data-room-copy="leave">Leave room</button></div>
       </div>
+    </section>
+
+    <section id="easter-egg" class="card easter-card hidden" role="dialog" aria-labelledby="easter-title">
+      <p id="easter-eyebrow" class="eyebrow">彩蛋触发 · MIRACLE TOSS</p>
+      <h2 id="easter-title" class="easter-title">硬币立住了！</h2>
+      <p id="easter-blessing" class="easter-blessing">万中无一的奇迹平衡！愿这份好运伴随你今日步步顺遂、万事胜意，所行皆坦途！</p>
+      <p id="easter-sub" class="small easter-sub">A one-in-a-million balance! May this rare stroke of fortune bring you joy and smooth paths ahead.</p>
+      <button id="b-easter-restart" class="start-game" type="button">收下祝福，重新开始 · Toss Again</button>
     </section>
 
     <aside id="room-bar" class="room-bar hidden" aria-label="Online room">

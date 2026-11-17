@@ -29,4 +29,19 @@ describe('upstream MCTS adapter', () => {
     const action = search(game, 20);
     expect(applyAction(game, action)).toBe(true);
   });
+
+  it('acts for the AI pawn even when the AI moved first (even move count)', () => {
+    const game = createGame('ai');
+    startGame(game, 'ai', 1);
+    game.pawns = [{ c: 4, r: 4 }, { c: 4, r: 5 }];
+    game.moves = 8;
+    expect(toUpstream(game).pawnIndexOfTurn).toBe(1);
+    for (let trial = 0; trial < 3; trial++) {
+      const action = search(game, 500);
+      expect(applyAction(Object.assign(structuredClone(game)), action)).toBe(true);
+      if (action.type === 'pawn') {
+        expect(action.r).toBeLessThan(game.pawns[1].r);
+      }
+    }
+  });
 });

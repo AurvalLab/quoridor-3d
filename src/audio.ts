@@ -82,10 +82,61 @@ export class Sound {
   /** A dull tick: the placement was refused. */
   no() { this.knock(96, 0.11, 0.07, 320); }
 
-  /** A die striking the board. `force` is the contact impulse. */
+  /** The opening coin striking the board. `force` is the contact impulse. */
   dice(force: number) {
     const gain = Math.min(0.2, 0.05 + force * 0.012);
     this.knock(240, 0.05, gain, 2600);
+    const ctx = this.ctx;
+    if (!ctx) return;
+    const t = ctx.currentTime;
+    const scale = Math.min(1, 0.35 + force * 0.12);
+    for (const [freq, type, level, dur] of [
+      [2900, 'sine', 0.036 * scale, 0.24],
+      [4350, 'triangle', 0.018 * scale, 0.16],
+    ] as const) {
+      const o = new OscillatorNode(ctx, { type, frequency: freq });
+      const g = new GainNode(ctx, { gain: 0.0008 });
+      o.connect(g);
+      g.connect(this.master);
+      g.connect(this.verb);
+      g.gain.setValueAtTime(Math.max(0.001, level), t);
+      g.gain.exponentialRampToValueAtTime(0.0008, t + dur);
+      o.start(t);
+      o.stop(t + dur + 0.02);
+    }
+  }
+
+  firework(level = 1) {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    const notes = [523.25, 659.25, 783.99, 1046.5];
+    notes.forEach((freq, index) => {
+      const start = now + index * 0.055;
+      const o = new OscillatorNode(ctx, { type: 'sine', frequency: freq });
+      const g = new GainNode(ctx, { gain: 0.0008 });
+      o.connect(g);
+      g.connect(this.master);
+      g.connect(this.verb);
+      g.gain.setValueAtTime(0.0008, start);
+      g.gain.exponentialRampToValueAtTime(0.042 * level, start + 0.025);
+      g.gain.exponentialRampToValueAtTime(0.0008, start + 0.65);
+      o.start(start);
+      o.stop(start + 0.68);
+    });
+    const n = Math.floor(ctx.sampleRate * 0.24);
+    const buffer = ctx.createBuffer(1, n, ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < n; i++) data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / n, 1.8);
+    const src = ctx.createBufferSource();
+    src.buffer = buffer;
+    const bp = new BiquadFilterNode(ctx, { type: 'bandpass', frequency: 3200, Q: 1.4 });
+    const ng = new GainNode(ctx, { gain: 0.05 * level });
+    src.connect(bp).connect(ng);
+    ng.connect(this.master);
+    ng.connect(this.verb);
+    src.start(now);
+    src.stop(now + 0.25);
   }
 
   win() {

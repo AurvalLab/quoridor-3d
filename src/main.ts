@@ -29,7 +29,7 @@ import { setupInstructions } from './instructions';
 import { Online } from './online';
 import { setupRoomUI } from './room-ui';
 import { clockValues, createClock, formatTime, syncClock, type Clock } from './clock';
-import { DiceRoll, openingCaption } from './dice';
+import { DiceRoll, openingCaption, seedFor } from './dice';
 
 const q = new URLSearchParams(location.search);
 const flag = (k: string) => q.get(k) === '1';
@@ -68,9 +68,111 @@ let controlRequest = 0;
 let openingRoll: DiceRoll | null = null;
 let rollKey = '';
 let diceSoundAt = 0;
-let urlSeed: number | null = q.has('seed') && Number.isFinite(Number(q.get('seed'))) ? Number(q.get('seed')) >>> 0 : null;
+let urlSeed: number | null = q.has('seed') && Number.isFinite(Number(q.get('seed')))
+  ? Number(q.get('seed')) >>> 0
+  : flag('easter') ? seedFor(0, true) : null;
 const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
 try { best = Number(localStorage.getItem(BEST_KEY)) || 0; } catch { /* storage blocked */ }
+
+type Spark = { x: number; y: number; vx: number; vy: number; life: number; maxLife: number; color: string; size: number };
+const fwCanvas = $<HTMLCanvasElement>('fireworks');
+const fwCtx = fwCanvas.getContext('2d')!;
+const FW_COLORS = ['#ffdf78', '#f6efe2', '#6fd4be', '#ff9f7a', '#ffe8a8'];
+let sparks: Spark[] = [];
+let fwBurstAt = 0;
+let easterActive = false;
+let easterAt = 0;
+
+function spawnFirework(cx: number, cy: number, soundScale = 0.5) {
+  const count = reduceMotion ? 16 : 42;
+  for (let i = 0; i < count; i++) {
+    const angle = (i / count) * Math.PI * 2 + (Math.random() - 0.5) * 0.2;
+    const speed = (reduceMotion ? 30 : 120) + Math.random() * (reduceMotion ? 50 : 210);
+    sparks.push({
+      x: cx,
+      y: cy,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed,
+      life: 0,
+      maxLife: 0.9 + Math.random() * 0.65,
+      color: FW_COLORS[i % FW_COLORS.length],
+      size: 2.2 + Math.random() * 2.4,
+    });
+  }
+  sound.firework(soundScale);
+}
+
+function hideEasterEgg() {
+  if (!easterActive && sparks.length === 0) return;
+  easterActive = false;
+  sparks = [];
+  $('easter-egg').classList.add('hidden');
+  fwCanvas.classList.add('hidden');
+  fwCtx.clearRect(0, 0, fwCanvas.width, fwCanvas.height);
+}
+
+function updateFireworks(dt: number, now: number) {
+  const standing = !!openingRoll?.edgeStand;
+  if (standing && !easterActive) {
+    easterActive = true;
+    easterAt = now;
+    fwBurstAt = now;
+    $('easter-egg').classList.remove('hidden');
+    fwCanvas.classList.remove('hidden');
+    spawnFirework(innerWidth * 0.3, innerHeight * 0.28, 1);
+    spawnFirework(innerWidth * 0.7, innerHeight * 0.26, 0.7);
+  } else if (!standing && easterActive) {
+    hideEasterEgg();
+  }
+  if (!easterActive) return;
+
+  const ratio = Math.min(devicePixelRatio || 1, 2);
+  const w = Math.max(2, Math.round(innerWidth * ratio));
+  const h = Math.max(2, Math.round(innerHeight * ratio));
+  if (fwCanvas.width !== w || fwCanvas.height !== h) {
+    fwCanvas.width = w;
+    fwCanvas.height = h;
+  }
+  if (!reduceMotion && now - fwBurstAt > 520) {
+    fwBurstAt = now;
+    spawnFirework(
+      innerWidth * (0.18 + Math.random() * 0.64),
+      innerHeight * (0.14 + Math.random() * 0.32),
+      0.42,
+    );
+  }
+  fwCtx.setTransform(ratio, 0, 0, ratio, 0, 0);
+  fwCtx.clearRect(0, 0, innerWidth, innerHeight);
+  const next: Spark[] = [];
+  for (const p of sparks) {
+    p.life += dt;
+    if (p.life >= p.maxLife) continue;
+    if (!reduceMotion) {
+      p.vy += 170 * dt;
+      p.vx *= Math.exp(-1.4 * dt);
+      p.vy *= Math.exp(-1.4 * dt);
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+    }
+    const alpha = Math.max(0, 1 - p.life / p.maxLife);
+    fwCtx.globalAlpha = alpha;
+    fwCtx.fillStyle = p.color;
+    fwCtx.beginPath();
+    fwCtx.arc(p.x, p.y, p.size * (0.6 + 0.4 * alpha), 0, Math.PI * 2);
+    fwCtx.fill();
+    next.push(p);
+  }
+  fwCtx.globalAlpha = 1;
+  sparks = next;
+}
+
+function restartFromEasterEgg() {
+  if (!openingRoll?.edgeStand) return;
+  hideEasterEgg();
+  if (openingRoll.rethrow()) {
+    sound.dice(0.85);
+  }
+}
 
 function show(id: 'title' | 'results' | null) {
   for (const s of ['title', 'results']) $(s).classList.toggle('hidden', s !== id);
@@ -85,6 +187,7 @@ function nextSeed() {
 function begin() {
   aiWorker?.terminate();
   aiWorker = null;
+  hideEasterEgg();
   sound.start();
   if (controlChoice === 'pointer' && !bot) input.setMode('pointer');
   if (queued === 'online') {
@@ -97,7 +200,8 @@ function begin() {
   localClock = createClock();
   const seed = nextSeed();
   rollKey = `local:${seed}:${performance.now()}`;
-  openingRoll = new DiceRoll(seed);
+  openingRoll = new DiceRoll(seed, !bot);
+  sound.dice(0.8);
   grab.reset();
   latch.reset();
   roll.reset();
@@ -172,6 +276,7 @@ function selectMode(mode: Mode) {
   queued = mode;
   scene.setPlayer(0);
   openingRoll = null;
+  hideEasterEgg();
   rollKey = '';
   Object.assign(game, createGame(mode));
   cancelCarry();
@@ -194,8 +299,8 @@ online.onChange = () => {
     if (game.phase === 'play' && previousPhase !== 'play') { sound.start(); armAt = performance.now() + 500; }
     if (state.opening && state.game.phase === 'play' && state.game.moves === 0) {
       const key = `${state.round}:${state.opening.seed}`;
-      if (key !== rollKey) { rollKey = key; openingRoll = new DiceRoll(state.opening.seed); }
-    } else if (state.game.phase !== 'play' || state.game.moves > 0) openingRoll = null;
+      if (key !== rollKey) { rollKey = key; hideEasterEgg(); openingRoll = new DiceRoll(state.opening.seed, !bot); sound.dice(0.8); }
+    } else if (state.game.phase !== 'play' || state.game.moves > 0) { openingRoll = null; hideEasterEgg(); }
     if (game.moves > previousMoves) sound.down(game.fences.length > previousFences ? 'fence' : 'pawn');
     if (game.phase === 'results' && previousPhase !== 'results') finish();
     else show(game.phase === 'title' ? 'title' : game.phase === 'results' ? 'results' : null);
@@ -263,9 +368,16 @@ function toggleView() {
   scene.resize();
 }
 $('b-view').addEventListener('click', toggleView);
+$('b-easter-restart').addEventListener('click', restartFromEasterEgg);
+$('easter-egg').addEventListener('click', restartFromEasterEgg);
 addEventListener('keydown', (e) => {
   if (e.repeat) return;
   if (e.target instanceof Element && e.target.closest('input, textarea, select')) return;
+  if (e.code === 'Space' && openingRoll?.edgeStand && !(e.target instanceof Element && e.target.closest('button'))) {
+    e.preventDefault();
+    restartFromEasterEgg();
+    return;
+  }
   if (e.code === 'Space' && game.phase !== 'play' && !(e.target instanceof Element && e.target.closest('button'))) {
     if (game.mode === 'online' && game.phase === 'results') return;
     if (game.phase === 'title' && $<HTMLButtonElement>('b-start').disabled) return;
@@ -332,6 +444,7 @@ function frame(now: number) {
     if (hitStrength > 0.45 && now - diceSoundAt > 90) { sound.dice(hitStrength); diceSoundAt = now; }
     if (openingRoll.done) finishRoll(now);
   }
+  updateFireworks(dt, now);
   const rolling = !!openingRoll && !openingRoll.done;
   const h = input.hand;
   if (!h?.pinching) viewNeedsRelease = false;
@@ -423,7 +536,8 @@ function frame(now: number) {
   }
 
   const pinchEdge = latch.update(h?.pinching ? 1 : 0);
-  if (pinchEdge === 'press' && game.phase === 'results' && game.mode !== 'online' && now - resultsAt > 1500) begin();
+  if (pinchEdge === 'press' && openingRoll?.edgeStand && now - easterAt > 600) restartFromEasterEgg();
+  else if (pinchEdge === 'press' && game.phase === 'results' && game.mode !== 'online' && now - resultsAt > 1500) begin();
 
   const showLegal = human && drag?.kind !== 'fence';
   const legal = showLegal ? legalMoves(game, game.turn) : [];
@@ -481,7 +595,8 @@ function paintHud(thinking: boolean) {
       ? `${drag.o === 'h' ? 'Horizontal' : 'Vertical'} · separate fingers to place`
       : 'That fence will not sit there';
   }
-  if (rolling && (!remote || online.connected)) turn = openingCaption(openingRoll!, chinese);
+  const viewer = remote ? online.player : ai ? 0 : null;
+  if (rolling && (!remote || online.connected)) turn = openingCaption(openingRoll!, chinese, viewer);
   $('turn').textContent = turn;
   $('b-view').classList.toggle('hidden', game.phase !== 'play' && game.phase !== 'opening');
   $('b-view').textContent = scene.view === 'top' ? 'Angled view · V' : 'Top view · V';
@@ -505,7 +620,7 @@ Object.defineProperty(window, '__game', {
     fps: Math.round(fps),
     dpr: scene.renderer.getPixelRatio(),
     best,
-    opening: openingRoll ? { seed: openingRoll.seed, settled: openingRoll.settled, first: openingRoll.first,
+    opening: openingRoll ? { seed: openingRoll.seed, settled: openingRoll.settled, edgeStand: openingRoll.edgeStand, first: openingRoll.first,
       attempts: openingRoll.attempts.map(attempt => ({ faces: [...attempt.faces], totals: [...attempt.totals] })) } : null,
     elapsed: clockValues(game.mode === 'online' ? remoteClock : localClock, performance.now()),
     room: online.session ? { code: online.session.code, player: online.player, connected: online.connected,

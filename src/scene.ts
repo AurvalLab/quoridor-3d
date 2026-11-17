@@ -340,6 +340,7 @@ export class Scene {
 
     const tableWood = woodTexture([96, 62, 40], false);
     new THREE.ImageLoader().load(new URL('./assets/salon-walnut.webp', import.meta.url).href, (image) => {
+      tableWood.dispose();
       tableWood.image = image;
       tableWood.needsUpdate = true;
     });
@@ -502,12 +503,13 @@ export class Scene {
     this.ring.renderOrder = 4;
     this.scene.add(this.ring);
 
-    const opening = createOpeningDice();
+    const opening = createOpeningDice(envMap);
     this.openingDice = opening.dice;
     this.faceLabels = opening.faces;
     for (const die of opening.dice) {
       this.scene.add(die.body);
       this.scene.add(die.label);
+      this.scene.add(die.halo);
     }
 
     this.resize();
@@ -783,12 +785,20 @@ export class Scene {
       const die = this.openingDice[i];
       die.body.visible = !!pose;
       die.label.visible = !!pose?.face;
+      die.halo.visible = !!pose?.face || !!pose?.edge;
       if (!pose) continue;
       die.body.position.set(pose.x, pose.y, pose.z);
       die.body.quaternion.set(pose.qx, pose.qy, pose.qz, pose.qw);
       if (pose.face) {
-        die.label.position.set(pose.x, pose.y + 0.62, pose.z);
+        die.label.position.set(pose.x, pose.y + 0.86, pose.z);
         die.label.material = this.faceLabels[pose.face - 1];
+        die.halo.position.set(pose.x, SURFACE + 0.012, pose.z);
+        die.halo.scale.setScalar(1 + Math.sin(motionT * 6) * 0.025);
+        (die.halo.material as THREE.MeshBasicMaterial).color.set(pose.face === 1 ? 0xf3ddb0 : 0x72cfb8);
+      } else if (pose.edge) {
+        die.halo.position.set(pose.x, SURFACE + 0.012, pose.z);
+        die.halo.scale.setScalar(1.06 + Math.sin(motionT * 8) * 0.06);
+        (die.halo.material as THREE.MeshBasicMaterial).color.set(0xffdf78);
       }
     }
     const shadowState = [s.pawns[0].c, s.pawns[0].r, s.pawns[1].c, s.pawns[1].r,

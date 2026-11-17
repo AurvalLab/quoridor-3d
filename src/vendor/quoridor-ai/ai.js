@@ -13,8 +13,9 @@ PawnPosition.clone = function(pawnPosition) {
 };
 
 Pawn.clone = function(pawn) {
-    const _clone = new Pawn(pawn.index, pawn.isHumanPlayer, true);
+    const _clone = new Pawn(pawn.index, pawn.isHumanSide, pawn.isHumanPlayer, true);
     _clone.index = pawn.index;
+    _clone.isHumanSide = pawn.isHumanSide;
     _clone.isHumanPlayer = pawn.isHumanPlayer;
     _clone.position = PawnPosition.clone(pawn.position);
     _clone.goalRow = pawn.goalRow;

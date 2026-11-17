@@ -15,7 +15,7 @@ export function toUpstream(game) {
     result.board.pawns[i].position.col = game.pawns[i].c;
     result.board.pawns[i].numberOfLeftWalls = game.remaining[i];
   }
-  result.turn = game.moves;
+  result.turn = game.moves % 2 === game.turn ? game.moves : game.moves + 1;
   return result;
 }
 
