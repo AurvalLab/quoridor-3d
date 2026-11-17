@@ -6,7 +6,7 @@
  * This solver stays in plain TypeScript so the room service and the browser
  * step the same throw and agree on the face. No three.js here.
  */
-import { other, type Player } from './rules';
+import type { Player } from './rules';
 
 export const COIN_RADIUS = 0.88;
 export const DIE_HALF = 0.095;
@@ -414,20 +414,34 @@ export function openingCaption(
       : '✨ Miracle! Coin stood on edge · Click to claim blessing & restart';
   }
   const first = roll.first;
-  const second = other(first);
-  if (viewer !== null) {
-    if (viewer === first) {
+  if (first === 0) {
+    if (viewer === 0) {
       return chinese
-        ? `硬币停在${names[first]}  ·  你是先手（${names[second]}后手）。`
-        : `${names[first]} face up  ·  You go first (${names[second]} second).`;
+        ? `硬币停在${names[0]}  ·  你是先手（执${names[0]}先行）。`
+        : `${names[0]} face up  ·  You go first as ${names[0]}.`;
+    }
+    if (viewer === 1) {
+      return chinese
+        ? `硬币停在${names[0]}  ·  你是后手（${names[0]}先行）。`
+        : `${names[0]} face up  ·  You go second (${names[0]} moves first).`;
     }
     return chinese
-      ? `硬币停在${names[first]}  ·  你是后手（${names[first]}先行）。`
-      : `${names[first]} face up  ·  You go second (${names[first]} moves first).`;
+      ? `硬币停在${names[0]}  ·  ${names[0]}先手，${names[1]}后手。`
+      : `${names[0]} face up  ·  ${names[0]} goes first, ${names[1]} second.`;
+  }
+  if (viewer === 0) {
+    return chinese
+      ? `硬币停在${names[1]}  ·  你是后手，切换至${names[1]}视角（${names[0]}先行）。`
+      : `${names[1]} face up  ·  You go second in ${names[1]} view (${names[0]} moves first).`;
+  }
+  if (viewer === 1) {
+    return chinese
+      ? `硬币停在${names[1]}  ·  你是后手（切换至${names[1]}视角）。`
+      : `${names[1]} face up  ·  You go second in ${names[1]} view.`;
   }
   return chinese
-    ? `硬币停在${names[first]}  ·  ${names[first]}先手，${names[second]}后手。`
-    : `${names[first]} face up  ·  ${names[first]} goes first, ${names[second]} second.`;
+    ? `硬币停在${names[1]}  ·  切换至${names[1]}视角（${names[0]}先手，${names[1]}后手）。`
+    : `${names[1]} face up  ·  Switching to ${names[1]} view (${names[0]} moves first).`;
 }
 
 /**

@@ -108,15 +108,17 @@ describe('opening coin toss', () => {
       .toContain('重新开始');
 
     expect(openingCaption({ attempts: [{ faces: [1, 0, 0, 0], totals: [1, 0] }], settled: true, first: 0 }, false, 0))
-      .toContain('You go first');
+      .toContain('You go first as Moon White');
     expect(openingCaption({ attempts: [{ faces: [1, 0, 0, 0], totals: [1, 0] }], settled: true, first: 0 }, false, 1))
       .toContain('You go second');
     expect(openingCaption({ attempts: [{ faces: [1, 0, 0, 0], totals: [1, 0] }], settled: true, first: 0 }, true, 0))
       .toContain('你是先手');
+    expect(openingCaption({ attempts: [{ faces: [0, 0, 2, 0], totals: [0, 1] }], settled: true, first: 1 }, false, 0))
+      .toContain('Jade Green view');
     expect(openingCaption({ attempts: [{ faces: [0, 0, 2, 0], totals: [0, 1] }], settled: true, first: 1 }, true, 0))
-      .toContain('你是后手');
+      .toContain('切换至翡翠绿视角');
     expect(openingCaption({ attempts: [{ faces: [0, 0, 2, 0], totals: [0, 1] }], settled: true, first: 1 }, true, null))
-      .toContain('翡翠绿先手，月牙白后手');
+      .toContain('切换至翡翠绿视角');
 
     const mirrored = flipDiePose(flipDiePose({
       owner: 1, x: 0.2, y: 0.175, z: -0.1, qx: 1, qy: 0, qz: 0, qw: 0, face: 2,

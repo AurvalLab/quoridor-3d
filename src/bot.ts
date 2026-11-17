@@ -35,7 +35,7 @@ export class Bot {
   private didMiss = false;
   private resultsT = 0;
 
-  update(g: Game, dt: number, project: Projector, aspect: number): BotHand {
+  update(g: Game, dt: number, project: Projector, aspect: number, player: 0 | 1 = 0): BotHand {
     if (g.phase === 'results') {
       this.plan = null;
       this.resultsT += dt;
@@ -46,7 +46,7 @@ export class Bot {
       return this.out();
     }
     this.resultsT = 0;
-    if (g.phase !== 'play' || g.turn !== 0) {
+    if (g.phase !== 'play' || g.turn !== player) {
       this.plan = null;
       this.step = 'seek';
       this.shape = 'open';
@@ -55,7 +55,7 @@ export class Bot {
       return this.out();
     }
     if (!this.plan) {
-      this.plan = this.nextPlan(g, project);
+      this.plan = this.nextPlan(g, project, player);
       this.step = 'seek';
       this.stepT = 0;
       this.dwell = 0;
@@ -95,20 +95,20 @@ export class Bot {
     return this.out();
   }
 
-  private nextPlan(g: Game, project: Projector): Plan {
+  private nextPlan(g: Game, project: Projector, player: 0 | 1): Plan {
     if (!this.didMiss) {
       this.didMiss = true;
-      const from = g.pawns[0];
-      const bad = badCell(g, from);
+      const from = g.pawns[player];
+      const bad = badCell(g, from, player);
       return { from: project.cell(from.c, from.r), to: project.cell(bad.c, bad.r), roll: 0 };
     }
     const action = chooseAction(g);
     if (!action || action.type === 'pawn') {
-      const to = action && action.type === 'pawn' ? action : (legalMoves(g, 0)[0] ?? g.pawns[0]);
-      return { from: project.cell(g.pawns[0].c, g.pawns[0].r), to: project.cell(to.c, to.r), roll: 0 };
+      const to = action && action.type === 'pawn' ? action : (legalMoves(g, player)[0] ?? g.pawns[player]);
+      return { from: project.cell(g.pawns[player].c, g.pawns[player].r), to: project.cell(to.c, to.r), roll: 0 };
     }
     return {
-      from: project.stock(0),
+      from: project.stock(player),
       to: project.slot(action.c, action.r),
       roll: action.o === 'h' ? Math.PI / 2 : 0,
     };
@@ -132,10 +132,10 @@ export class Bot {
   }
 }
 
-function badCell(g: Game, from: Cell): Cell {
-  const legal = legalMoves(g, 0);
+function badCell(g: Game, from: Cell, player: 0 | 1): Cell {
+  const legal = legalMoves(g, player);
   const candidates = [
-    { c: from.c, r: from.r + 2 },
+    { c: from.c, r: from.r + (player === 0 ? 2 : -2) },
     { c: from.c + 2, r: from.r },
     { c: 0, r: 0 },
   ];

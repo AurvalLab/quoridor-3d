@@ -18,8 +18,8 @@ import { Input } from './input';
 import { PinchLatch } from './pinch';
 import { GrabLatch, RELEASE_HOLD_S, RollLatch } from './grab';
 import {
-  createGame, fenceProblem, isLegalMove, legalMoves, releaseDrag, startGame, toggled,
-  type Aim, type Mode, type Orientation,
+  createGame, fenceProblem, isLegalMove, legalMoves, other, releaseDrag, startGame, toggled,
+  type Aim, type Mode, type Orientation, type Player,
 } from './rules';
 import { applyAction, chooseAction } from './ai';
 import { fenceOrientation, Scene, slotCenter, type DragView } from './scene';
@@ -66,6 +66,7 @@ let controlChoice: 'camera' | 'pointer' = 'pointer';
 let cameraStarting = false;
 let controlRequest = 0;
 let openingRoll: DiceRoll | null = null;
+let humanSide: Player = 0;
 let rollKey = '';
 let diceSoundAt = 0;
 let urlSeed: number | null = q.has('seed') && Number.isFinite(Number(q.get('seed')))
@@ -197,6 +198,8 @@ function begin() {
   }
   startGame(game, queued);
   game.phase = 'opening';
+  humanSide = 0;
+  scene.setPlayer(0);
   localClock = createClock();
   const seed = nextSeed();
   rollKey = `local:${seed}:${performance.now()}`;
@@ -215,7 +218,9 @@ function begin() {
 function finishRoll(now: number) {
   if (!openingRoll?.done || openingRoll.first === null) return;
   if (game.mode !== 'online') {
-    game.turn = openingRoll.first;
+    humanSide = openingRoll.first;
+    scene.setPlayer(humanSide);
+    game.turn = 0;
     game.phase = 'play';
     syncClock(localClock, game.turn, now);
   }
@@ -227,7 +232,7 @@ function finish() {
   sound.win();
   const ai = game.mode === 'ai';
   const remote = game.mode === 'online';
-  const you = game.winner === (remote ? online.player : 0);
+  const you = game.winner === (remote ? online.player : humanSide);
   const who = remote ? (you ? 'You reached the far rank.' : 'Your friend reached the far rank.') : ai
     ? (you ? 'You reached the far rank.' : 'The machine reached your rank.')
     : (you ? 'Pale reached the far rank.' : 'Dark reached the near rank.');
@@ -274,6 +279,7 @@ function selectMode(mode: Mode) {
   $('preview').classList.add('hidden');
   if (!cameraStarting) instructions.setCameraState('idle');
   queued = mode;
+  humanSide = 0;
   scene.setPlayer(0);
   openingRoll = null;
   hideEasterEgg();
@@ -436,7 +442,7 @@ function frame(now: number) {
       cell: (c, r) => scene.cellToScreen(c, r),
       slot: (c, r) => scene.slotToScreen(c, r),
       stock: (p) => scene.stockToScreen(p),
-    }, scene.aspect);
+    }, scene.aspect, humanSide);
   }
   input.update(dt);
   if (openingRoll && !openingRoll.done) {
@@ -450,7 +456,7 @@ function frame(now: number) {
   if (!h?.pinching) viewNeedsRelease = false;
   const point = h ? scene.boardPoint(h.screen.x, h.screen.y, !drag) : null;
   const hit = point ? scene.classify(point.x, point.z, game.pawns, !drag) : null;
-  const human = !rolling && game.phase === 'play' && (game.mode === 'online' ? online.canPlay : game.mode === 'hotseat' || game.turn === 0);
+  const human = !rolling && game.phase === 'play' && (game.mode === 'online' ? online.canPlay : game.mode === 'hotseat' || game.turn === humanSide);
   const autoFence = input.mode === 'camera' || input.mode === 'pointer';
   const useRoll = input.mode === 'bot';
 
@@ -510,11 +516,12 @@ function frame(now: number) {
     sound.no();
   }
 
-  const thinking = !rolling && game.mode === 'ai' && game.phase === 'play' && game.turn === 1 && !drag;
+  const aiSide = other(humanSide);
+  const thinking = !rolling && game.mode === 'ai' && game.phase === 'play' && game.turn === aiSide && !drag;
   if (thinking && !aiWorker) {
     const snapshot = game.moves;
     const play = (action: ReturnType<typeof chooseAction>) => {
-      if (game.phase !== 'play' || game.mode !== 'ai' || game.turn !== 1 || game.moves !== snapshot) return;
+      if (game.phase !== 'play' || game.mode !== 'ai' || game.turn !== aiSide || game.moves !== snapshot) return;
       if (!action || !applyAction(game, action)) action = chooseAction(game);
       else {
         sound.down(action.type === 'pawn' ? 'pawn' : 'fence');
@@ -563,8 +570,8 @@ requestAnimationFrame(frame);
 function paintHud(thinking: boolean) {
   const ai = game.mode === 'ai';
   const remote = game.mode === 'online';
-  $('name-0').textContent = remote ? (online.player === 0 ? 'You' : 'Friend') : ai ? 'You' : 'Player 1';
-  $('name-1').textContent = remote ? (online.player === 1 ? 'You' : 'Friend') : ai ? 'Machine' : 'Player 2';
+  $('name-0').textContent = remote ? (online.player === 0 ? 'You' : 'Friend') : ai ? (humanSide === 0 ? 'You' : 'Machine') : 'Player 1';
+  $('name-1').textContent = remote ? (online.player === 1 ? 'You' : 'Friend') : ai ? (humanSide === 1 ? 'You' : 'Machine') : 'Player 2';
   const chinese = $('title').lang === 'zh-CN';
   $('color-0').textContent = chinese ? '月牙白' : 'Moon White';
   $('color-1').textContent = chinese ? '翡翠绿' : 'Jade Green';
@@ -583,9 +590,11 @@ function paintHud(thinking: boolean) {
   $('side-1').classList.toggle('live', liveTurn === 1);
   const white = chinese ? '月牙白' : 'Moon White';
   const jade = chinese ? '翡翠绿' : 'Jade Green';
-  let turn = thinking ? (chinese ? '电脑正在思考' : 'The machine is choosing') : game.turn === 0
-    ? (ai ? (chinese ? '你的回合' : 'Your turn') : (chinese ? `${white}的回合` : `${white}'s turn`))
-    : (ai ? (chinese ? '电脑的回合' : "Machine's turn") : (chinese ? `${jade}的回合` : `${jade}'s turn`));
+  let turn = thinking ? (chinese ? '电脑正在思考' : 'The machine is choosing') : ai
+    ? (game.turn === humanSide ? (chinese ? '你的回合' : 'Your turn') : (chinese ? '电脑的回合' : "Machine's turn"))
+    : game.turn === 0
+      ? (chinese ? `${white}的回合` : `${white}'s turn`)
+      : (chinese ? `${jade}的回合` : `${jade}'s turn`);
   if (remote) turn = !online.connected ? 'Connection lost · reconnecting' : !online.state?.connected.every(Boolean)
     ? 'Friend disconnected · waiting' : online.pending ? 'Confirming move…' : game.turn === online.player ? 'Your turn' : "Friend's turn";
   if (drag?.kind === 'pawn') turn = drag.legal ? (input.mode === 'camera' ? 'Separate your fingers on the green square' : 'Release on the green square') : 'That square is closed';
@@ -595,7 +604,7 @@ function paintHud(thinking: boolean) {
       ? `${drag.o === 'h' ? 'Horizontal' : 'Vertical'} · separate fingers to place`
       : 'That fence will not sit there';
   }
-  const viewer = remote ? online.player : ai ? 0 : null;
+  const viewer = remote ? online.player : ai ? humanSide : null;
   if (rolling && (!remote || online.connected)) turn = openingCaption(openingRoll!, chinese, viewer);
   $('turn').textContent = turn;
   $('b-view').classList.toggle('hidden', game.phase !== 'play' && game.phase !== 'opening');
@@ -607,6 +616,7 @@ Object.defineProperty(window, '__game', {
   get: () => ({
     phase: game.phase,
     mode: game.mode,
+    player: game.mode === 'online' ? online.player : humanSide,
     turn: game.turn,
     winner: game.winner,
     moves: game.moves,

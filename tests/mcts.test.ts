@@ -30,7 +30,7 @@ describe('upstream MCTS adapter', () => {
     expect(applyAction(game, action)).toBe(true);
   });
 
-  it('acts for the AI pawn even when the AI moved first (even move count)', () => {
+  it('acts for AI as either Jade second (even move count) or Moon White first', () => {
     const game = createGame('ai');
     startGame(game, 'ai', 1);
     game.pawns = [{ c: 4, r: 4 }, { c: 4, r: 5 }];
@@ -38,10 +38,19 @@ describe('upstream MCTS adapter', () => {
     expect(toUpstream(game).pawnIndexOfTurn).toBe(1);
     for (let trial = 0; trial < 3; trial++) {
       const action = search(game, 500);
-      expect(applyAction(Object.assign(structuredClone(game)), action)).toBe(true);
+      expect(applyAction(structuredClone(game), action)).toBe(true);
       if (action.type === 'pawn') {
         expect(action.r).toBeLessThan(game.pawns[1].r);
       }
+    }
+
+    const whiteAi = createGame('ai');
+    startGame(whiteAi, 'ai', 0);
+    expect(toUpstream(whiteAi).pawnIndexOfTurn).toBe(0);
+    const whiteAction = search(whiteAi, 500);
+    expect(applyAction(structuredClone(whiteAi), whiteAction)).toBe(true);
+    if (whiteAction.type === 'pawn') {
+      expect(whiteAction.r).toBeGreaterThan(whiteAi.pawns[0].r);
     }
   });
 });

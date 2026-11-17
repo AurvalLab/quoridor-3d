@@ -156,7 +156,7 @@ function makeCoinFaceTexture(side: 'white' | 'jade'): THREE.CanvasTexture {
   g.textBaseline = 'middle';
   drawArcText(
     g,
-    white ? 'MOON WHITE · 月牙白 · FIRST' : 'JADE GREEN · 翡翠绿 · FIRST',
+    white ? 'MOON WHITE · 月牙白 · FIRST' : 'JADE GREEN · 翡翠绿 · SECOND',
     cx,
     cy,
     182,
@@ -166,7 +166,7 @@ function makeCoinFaceTexture(side: 'white' | 'jade'): THREE.CanvasTexture {
   );
   drawArcText(
     g,
-    white ? '先手 · IVORY SEAL' : '先手 · JADE SEAL',
+    white ? '先手 · IVORY SEAL' : '后手 · JADE SEAL',
     cx,
     cy,
     182,
@@ -236,14 +236,14 @@ function faceMaterials(): THREE.SpriteMaterial[] {
     {
       pip: '#f5ede0',
       rim: '#d4b572',
-      en: 'MOON WHITE 1ST · JADE 2ND',
+      en: 'MOON WHITE · FIRST MOVE',
       zh: '月牙白先手 · 翡翠绿后手',
     },
     {
       pip: '#4ba791',
       rim: '#d4b572',
-      en: 'JADE GREEN 1ST · WHITE 2ND',
-      zh: '翡翠绿先手 · 月牙白后手',
+      en: 'JADE GREEN · SECOND MOVE',
+      zh: '翡翠后手 · 切换绿色视角',
     },
   ];
   return specs.map((spec) => {
