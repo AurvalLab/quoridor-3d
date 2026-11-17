@@ -7,6 +7,7 @@
  *   ?mute=1        no sound
  *   ?mode=hotseat  two people, passing the same hand
  *   ?speed=K       run K times faster
+ *   ?seed=N        reproducible opening dice for the first game
  */
 import '@fontsource/fraunces/400.css';
 import '@fontsource/manrope/500.css';
@@ -28,6 +29,7 @@ import { setupInstructions } from './instructions';
 import { Online } from './online';
 import { setupRoomUI } from './room-ui';
 import { clockValues, createClock, formatTime, syncClock, type Clock } from './clock';
+import { DiceRoll, openingCaption } from './dice';
 
 const q = new URLSearchParams(location.search);
 const flag = (k: string) => q.get(k) === '1';
@@ -63,11 +65,21 @@ let remoteClock: Clock = createClock();
 let controlChoice: 'camera' | 'pointer' = 'pointer';
 let cameraStarting = false;
 let controlRequest = 0;
+let openingRoll: DiceRoll | null = null;
+let rollKey = '';
+let diceSoundAt = 0;
+let urlSeed: number | null = q.has('seed') && Number.isFinite(Number(q.get('seed'))) ? Number(q.get('seed')) >>> 0 : null;
+const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
 try { best = Number(localStorage.getItem(BEST_KEY)) || 0; } catch { /* storage blocked */ }
 
 function show(id: 'title' | 'results' | null) {
   for (const s of ['title', 'results']) $(s).classList.toggle('hidden', s !== id);
   $('hud').classList.toggle('hidden', id !== null);
+}
+
+function nextSeed() {
+  if (urlSeed !== null) { const seed = urlSeed; urlSeed = null; return seed; }
+  return (Math.random() * 0x100000000) >>> 0;
 }
 
 function begin() {
@@ -81,8 +93,11 @@ function begin() {
     return;
   }
   startGame(game, queued);
+  game.phase = 'opening';
   localClock = createClock();
-  syncClock(localClock, game.turn, performance.now());
+  const seed = nextSeed();
+  rollKey = `local:${seed}:${performance.now()}`;
+  openingRoll = new DiceRoll(seed);
   grab.reset();
   latch.reset();
   roll.reset();
@@ -91,6 +106,17 @@ function begin() {
   armAt = performance.now() + 500;
   show(null);
   paintMode();
+}
+
+function finishRoll(now: number) {
+  if (!openingRoll?.done || openingRoll.first === null) return;
+  if (game.mode !== 'online') {
+    game.turn = openingRoll.first;
+    game.phase = 'play';
+    syncClock(localClock, game.turn, now);
+  }
+  armAt = now + 200;
+  openingRoll = null;
 }
 
 function finish() {
@@ -145,6 +171,8 @@ function selectMode(mode: Mode) {
   if (!cameraStarting) instructions.setCameraState('idle');
   queued = mode;
   scene.setPlayer(0);
+  openingRoll = null;
+  rollKey = '';
   Object.assign(game, createGame(mode));
   cancelCarry();
   show('title');
@@ -164,6 +192,10 @@ online.onChange = () => {
     cancelCarry();
     if (game.phase !== 'title' && input.mode === 'none') input.setMode('pointer');
     if (game.phase === 'play' && previousPhase !== 'play') { sound.start(); armAt = performance.now() + 500; }
+    if (state.opening && state.game.phase === 'play' && state.game.moves === 0) {
+      const key = `${state.round}:${state.opening.seed}`;
+      if (key !== rollKey) { rollKey = key; openingRoll = new DiceRoll(state.opening.seed); }
+    } else if (state.game.phase !== 'play' || state.game.moves > 0) openingRoll = null;
     if (game.moves > previousMoves) sound.down(game.fences.length > previousFences ? 'fence' : 'pawn');
     if (game.phase === 'results' && previousPhase !== 'results') finish();
     else show(game.phase === 'title' ? 'title' : game.phase === 'results' ? 'results' : null);
@@ -221,7 +253,7 @@ $('b-mouse').addEventListener('click', () => {
 });
 $('b-start').addEventListener('click', () => { if (!$<HTMLButtonElement>('b-start').disabled) begin(); });
 function toggleView() {
-  if (game.phase !== 'play') return;
+  if (game.phase !== 'play' && game.phase !== 'opening') return;
   // A new projection must not drop or re-grab the piece under a still-closed hand.
   drag = null;
   grab.reset();
@@ -295,11 +327,17 @@ function frame(now: number) {
     }, scene.aspect);
   }
   input.update(dt);
+  if (openingRoll && !openingRoll.done) {
+    const hitStrength = openingRoll.step(reduceMotion && !openingRoll.settled ? 2.5 : dt);
+    if (hitStrength > 0.45 && now - diceSoundAt > 90) { sound.dice(hitStrength); diceSoundAt = now; }
+    if (openingRoll.done) finishRoll(now);
+  }
+  const rolling = !!openingRoll && !openingRoll.done;
   const h = input.hand;
   if (!h?.pinching) viewNeedsRelease = false;
   const point = h ? scene.boardPoint(h.screen.x, h.screen.y, !drag) : null;
   const hit = point ? scene.classify(point.x, point.z, game.pawns, !drag) : null;
-  const human = game.phase === 'play' && (game.mode === 'online' ? online.canPlay : game.mode === 'hotseat' || game.turn === 0);
+  const human = !rolling && game.phase === 'play' && (game.mode === 'online' ? online.canPlay : game.mode === 'hotseat' || game.turn === 0);
   const autoFence = input.mode === 'camera' || input.mode === 'pointer';
   const useRoll = input.mode === 'bot';
 
@@ -359,7 +397,7 @@ function frame(now: number) {
     sound.no();
   }
 
-  const thinking = game.mode === 'ai' && game.phase === 'play' && game.turn === 1 && !drag;
+  const thinking = !rolling && game.mode === 'ai' && game.phase === 'play' && game.turn === 1 && !drag;
   if (thinking && !aiWorker) {
     const snapshot = game.moves;
     const play = (action: ReturnType<typeof chooseAction>) => {
@@ -402,6 +440,7 @@ function frame(now: number) {
     thinking,
     dt,
     t,
+    dice: rolling ? openingRoll!.poses() : null,
   });
   drawPreview();
 }
@@ -416,7 +455,8 @@ function paintHud(thinking: boolean) {
   $('color-0').textContent = chinese ? '月牙白' : 'Moon White';
   $('color-1').textContent = chinese ? '翡翠绿' : 'Jade Green';
   const clockNow = performance.now();
-  if (!remote) syncClock(localClock, game.phase === 'play' ? game.turn : null, clockNow);
+  const rolling = !!openingRoll && !openingRoll.done;
+  if (!remote) syncClock(localClock, !rolling && game.phase === 'play' ? game.turn : null, clockNow);
   const elapsed = clockValues(remote ? remoteClock : localClock, clockNow);
   for (const player of [0, 1] as const) {
     const node = $<HTMLTimeElement>('time-' + player), value = formatTime(elapsed[player]);
@@ -424,11 +464,14 @@ function paintHud(thinking: boolean) {
   }
   $('fences-0').textContent = `${game.remaining[0]} fences`;
   $('fences-1').textContent = `${game.remaining[1]} fences`;
-  $('side-0').classList.toggle('live', game.phase === 'play' && game.turn === 0);
-  $('side-1').classList.toggle('live', game.phase === 'play' && game.turn === 1);
-  let turn = thinking ? 'The machine is choosing' : game.turn === 0
-    ? (ai ? 'Your turn' : "Pale's turn")
-    : (ai ? "Machine's turn" : "Dark's turn");
+  const liveTurn = rolling ? (openingRoll!.settled ? openingRoll!.first : null) : game.phase === 'play' ? game.turn : null;
+  $('side-0').classList.toggle('live', liveTurn === 0);
+  $('side-1').classList.toggle('live', liveTurn === 1);
+  const white = chinese ? '月牙白' : 'Moon White';
+  const jade = chinese ? '翡翠绿' : 'Jade Green';
+  let turn = thinking ? (chinese ? '电脑正在思考' : 'The machine is choosing') : game.turn === 0
+    ? (ai ? (chinese ? '你的回合' : 'Your turn') : (chinese ? `${white}的回合` : `${white}'s turn`))
+    : (ai ? (chinese ? '电脑的回合' : "Machine's turn") : (chinese ? `${jade}的回合` : `${jade}'s turn`));
   if (remote) turn = !online.connected ? 'Connection lost · reconnecting' : !online.state?.connected.every(Boolean)
     ? 'Friend disconnected · waiting' : online.pending ? 'Confirming move…' : game.turn === online.player ? 'Your turn' : "Friend's turn";
   if (drag?.kind === 'pawn') turn = drag.legal ? (input.mode === 'camera' ? 'Separate your fingers on the green square' : 'Release on the green square') : 'That square is closed';
@@ -438,8 +481,9 @@ function paintHud(thinking: boolean) {
       ? `${drag.o === 'h' ? 'Horizontal' : 'Vertical'} · separate fingers to place`
       : 'That fence will not sit there';
   }
+  if (rolling && (!remote || online.connected)) turn = openingCaption(openingRoll!, chinese);
   $('turn').textContent = turn;
-  $('b-view').classList.toggle('hidden', game.phase !== 'play');
+  $('b-view').classList.toggle('hidden', game.phase !== 'play' && game.phase !== 'opening');
   $('b-view').textContent = scene.view === 'top' ? 'Angled view · V' : 'Top view · V';
   $('b-view').setAttribute('aria-pressed', String(scene.view === 'top'));
 }
@@ -461,6 +505,8 @@ Object.defineProperty(window, '__game', {
     fps: Math.round(fps),
     dpr: scene.renderer.getPixelRatio(),
     best,
+    opening: openingRoll ? { seed: openingRoll.seed, settled: openingRoll.settled, first: openingRoll.first,
+      attempts: openingRoll.attempts.map(attempt => ({ faces: [...attempt.faces], totals: [...attempt.totals] })) } : null,
     elapsed: clockValues(game.mode === 'online' ? remoteClock : localClock, performance.now()),
     room: online.session ? { code: online.session.code, player: online.player, connected: online.connected,
       revision: online.state?.revision, pending: online.pending, ready: online.state?.ready, round: online.state?.round } : null,

@@ -16,6 +16,8 @@ import { fenceBox, rackLayout, STOCK_HEIGHT, STOCK_Y, stockOffset, PLACED_FENCE_
 import { ReferenceScene } from './reference-scene';
 import { TopScene } from './top-scene';
 import { referenceFrame, referencePoint, referenceStockAt, referenceWorld, REFERENCE_STOCK, REFERENCE_WIDTH, REFERENCE_HEIGHT } from './reference-projection';
+import { flipDiePose, type DiePose } from './dice';
+import { createOpeningDice, type OpeningDie } from './dice-mesh';
 
 const CELL = 1;
 const SURFACE = 0.08;
@@ -143,6 +145,8 @@ export interface RenderState {
   thinking: boolean;
   dt: number;
   t: number;
+  /** Opening dice, already in the view that render() is drawing. */
+  dice?: DiePose[] | null;
 }
 
 export const flipCell = (cell: Cell): Cell => ({ c: 8 - cell.c, r: 8 - cell.r });
@@ -157,6 +161,7 @@ export function reverseRenderState(s: RenderState): RenderState {
     drag: s.drag && { ...s.drag, x: -s.drag.x, z: -s.drag.z, owner: flipPlayer(s.drag.owner),
       cell: s.drag.cell && flipCell(s.drag.cell), slot: s.drag.slot && { c: 7 - s.drag.slot.c, r: 7 - s.drag.slot.r } },
     cursor: s.cursor && { ...s.cursor, x: -s.cursor.x, z: -s.cursor.z },
+    ...(s.dice ? { dice: s.dice.map(flipDiePose) } : {}),
   };
 }
 
@@ -284,6 +289,8 @@ export class Scene {
   private get reference() { return this.references[this.player]; }
   private reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
   private shadowState = '';
+  private openingDice: OpeningDie[] = [];
+  private faceLabels: THREE.SpriteMaterial[] = [];
 
   constructor(el: HTMLElement, private dprCap = 2) {
     this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' });
@@ -494,6 +501,14 @@ export class Scene {
     this.ring.layers.enable(1);
     this.ring.renderOrder = 4;
     this.scene.add(this.ring);
+
+    const opening = createOpeningDice();
+    this.openingDice = opening.dice;
+    this.faceLabels = opening.faces;
+    for (const die of opening.dice) {
+      this.scene.add(die.body);
+      this.scene.add(die.label);
+    }
 
     this.resize();
     this.renderer.compile(this.scene, this.camera);
@@ -762,6 +777,19 @@ export class Scene {
       this.ring.scale.setScalar(size);
       const legal = s.drag ? s.drag.legal : null;
       rm.color.set(legal === null ? 0xfff1dc : legal ? 0x8ee0b0 : 0xf0a090);
+    }
+    for (let i = 0; i < this.openingDice.length; i++) {
+      const pose = s.dice?.[i];
+      const die = this.openingDice[i];
+      die.body.visible = !!pose;
+      die.label.visible = !!pose?.face;
+      if (!pose) continue;
+      die.body.position.set(pose.x, pose.y, pose.z);
+      die.body.quaternion.set(pose.qx, pose.qy, pose.qz, pose.qw);
+      if (pose.face) {
+        die.label.position.set(pose.x, pose.y + 0.62, pose.z);
+        die.label.material = this.faceLabels[pose.face - 1];
+      }
     }
     const shadowState = [s.pawns[0].c, s.pawns[0].r, s.pawns[1].c, s.pawns[1].r,
       s.fences.length, ...s.remaining, s.drag?.kind, s.drag?.x, s.drag?.z, s.drag?.o].join(',');

@@ -15,7 +15,7 @@ export const FENCE_COUNT = 10;
 
 export type Player = 0 | 1;
 export type Orientation = 'h' | 'v';
-export type Phase = 'title' | 'play' | 'results';
+export type Phase = 'title' | 'opening' | 'play' | 'results';
 export type Mode = 'ai' | 'hotseat' | 'online';
 
 export interface Cell { c: number; r: number }
@@ -81,9 +81,10 @@ export function createGame(mode: Mode = 'ai'): Game {
   };
 }
 
-export function startGame(g: Game, mode: Mode = g.mode) {
+export function startGame(g: Game, mode: Mode = g.mode, first: Player = 0) {
   const fresh = createGame(mode);
   fresh.phase = 'play';
+  fresh.turn = first;
   Object.assign(g, fresh);
   g.pawns = fresh.pawns;
   g.fences = fresh.fences;

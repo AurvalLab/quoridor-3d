@@ -6,6 +6,7 @@
 | Quoridor MCTS AI (`src/vendor/quoridor-ai/`) | MIT, Copyright 2019 Kyutae Lee | https://github.com/gorisanson/quoridor-ai |
 | MediaPipe Tasks Vision (`@mediapipe/tasks-vision`) and the Hand Landmarker model (downloaded to `public/models/`) | Apache-2.0 | Google, https://github.com/google-ai-edge/mediapipe |
 | three.js | MIT | https://threejs.org |
+| Opening-dice motion (adapted: gravity, tumble, bounce and settle; no assets copied) | ISC | https://github.com/Spute/3d-dice-three-js |
 | Fraunces (font, via `@fontsource/fraunces`) | SIL Open Font License 1.1 | Undercase Type |
 | Manrope (font, via `@fontsource/manrope`) | SIL Open Font License 1.1 | Mikhail Sharanda |
 | Vite, Vitest, TypeScript, Playwright (development only) | MIT / Apache-2.0 | npm |

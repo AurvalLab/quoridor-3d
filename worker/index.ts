@@ -88,6 +88,7 @@ export class GameRoom extends DurableObject<Env> {
       if (this.room) {
         this.room.sides ??= [0, 1];
         this.room.clock ??= createClock();
+        this.room.opening ??= null;
         // With no restored sockets, resume from the saved clock instead of charging server downtime.
         if (!this.connected().every(Boolean)) this.room.clock.running = null;
       }
