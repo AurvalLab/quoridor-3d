@@ -42,14 +42,16 @@ npx wrangler login
 npm run deploy
 ```
 
-The deploy script builds/types-checks both parts, uploads only the public game assets and Worker code, and applies the `v1` Durable Object migration in `wrangler.jsonc`. No API key is embedded in the frontend. Use the HTTPS URL returned by Wrangler to invite players on other networks. Hosting can start within Cloudflare's free tier; account eligibility and current quotas must be checked at deployment. This implementation has been verified locally, not deployed or tested across networks yet.
+The deploy script builds/types-checks both parts, uploads the public game assets and Worker code, and applies the `v1` Durable Object migration in `wrangler.jsonc`. No API key is embedded in the frontend. Hosting can start within Cloudflare's free tier; account eligibility and current quotas must be checked at deployment.
+
+The [GitHub Pages version](https://aurvallab.github.io/quoridor-3d/) is deployed by GitHub Actions on pushes to `main`. It uses the Cloudflare Worker for online rooms; the Worker accepts cross-origin room requests only from the GitHub Pages origin. Both services must be available for online play.
 
 | Action | Hand | Mouse / touch | Keyboard |
 | --- | --- | --- | --- |
 | Aim | move your hand; the dot stays stable while the fingers close | move the pointer | |
 | Pick up your pawn or a fence from your stack | pinch thumb and index finger over the piece | press and hold | |
 | Put it down | separate thumb and index finger | let go | |
-| Turn a fence | aim along the horizontal or vertical gap | the **Fence is…** button | right-click or R |
+| Turn a fence | aim along the horizontal or vertical gap | drag along a gap; right-click also rotates | R |
 | Switch angled / top view | | the **Top view / Angled view** button | V |
 | Start / play again | pinch on the results card | click a button | Space |
 | Mute | | | M |

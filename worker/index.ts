@@ -8,6 +8,7 @@ interface Env { ROOMS: DurableObjectNamespace<GameRoom>; ASSETS: Fetcher }
 interface Connection { player: Player; window: number; count: number }
 const json = (value: unknown, status = 200) => Response.json(value, { status, headers: { 'Cache-Control': 'no-store' } });
 const fail = (error: string, status = 400) => json({ error }, status);
+const pagesOrigin = 'https://aurvallab.github.io';
 
 async function body(request: Request): Promise<Record<string, unknown> | null> {
   if (!request.headers.get('Content-Type')?.startsWith('application/json')) return null;
@@ -30,11 +31,12 @@ async function body(request: Request): Promise<Record<string, unknown> | null> {
   catch { return null; }
 }
 
-export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
+async function route(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
     if (!url.pathname.startsWith('/api/')) return env.ASSETS.fetch(request);
-    if (request.headers.get('Origin') && request.headers.get('Origin') !== url.origin) return fail('origin', 403);
+    const origin = request.headers.get('Origin');
+    if (origin && origin !== url.origin && origin !== pagesOrigin) return fail('origin', 403);
+    if (origin === pagesOrigin && request.method === 'OPTIONS') return new Response(null, { status: 204 });
     if (url.pathname === '/api/rooms' && request.method === 'POST') {
       if (!await body(request)) return fail('message');
       const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -61,6 +63,18 @@ export default {
       }));
     }
     return env.ROOMS.get(env.ROOMS.idFromName(match[1])).fetch(new Request(url, request));
+}
+
+export default {
+  async fetch(request: Request, env: Env): Promise<Response> {
+    const response = await route(request, env);
+    if (request.headers.get('Origin') !== pagesOrigin || response.status === 101) return response;
+    const headers = new Headers(response.headers);
+    headers.set('Access-Control-Allow-Origin', pagesOrigin);
+    headers.set('Access-Control-Allow-Methods', 'POST, OPTIONS');
+    headers.set('Access-Control-Allow-Headers', 'Content-Type');
+    headers.set('Vary', 'Origin');
+    return new Response(response.body, { status: response.status, headers });
   },
 } satisfies ExportedHandler<Env>;
 

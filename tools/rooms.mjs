@@ -42,6 +42,11 @@ class Client {
 try {
   const badOrigin = await post('/api/rooms', {}, { Origin: 'https://untrusted.example' });
   check('rejects cross-origin room creation', badOrigin.status === 403);
+  const pagesOrigin = 'https://aurvallab.github.io';
+  const preflight = await fetch(origin + '/api/rooms', { method: 'OPTIONS', headers: { Origin: pagesOrigin, 'Access-Control-Request-Method': 'POST', 'Access-Control-Request-Headers': 'content-type' } });
+  check('allows GitHub Pages preflight', preflight.status === 204 && preflight.headers.get('Access-Control-Allow-Origin') === pagesOrigin && preflight.headers.get('Access-Control-Allow-Headers') === 'Content-Type');
+  const pages = await fetch(origin + '/api/rooms', { method: 'POST', headers: { Origin: pagesOrigin, 'Content-Type': 'application/json' }, body: '{}' });
+  check('allows GitHub Pages room creation', pages.status === 200 && pages.headers.get('Access-Control-Allow-Origin') === pagesOrigin);
   const malformed = await post('/api/rooms', []);
   check('rejects malformed JSON shape', malformed.status === 400);
   check('rejects oversized room requests', (await post('/api/rooms', { padding: 'x'.repeat(2100) })).status === 400);

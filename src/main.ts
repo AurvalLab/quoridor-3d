@@ -300,14 +300,14 @@ function frame(now: number) {
   const point = h ? scene.boardPoint(h.screen.x, h.screen.y, !drag) : null;
   const hit = point ? scene.classify(point.x, point.z, game.pawns, !drag) : null;
   const human = game.phase === 'play' && (game.mode === 'online' ? online.canPlay : game.mode === 'hotseat' || game.turn === 0);
-  const autoFence = input.mode === 'camera';
+  const autoFence = input.mode === 'camera' || input.mode === 'pointer';
   const useRoll = input.mode === 'bot';
 
   if (input.consumeRotate()) {
     if (drag?.kind === 'fence') { drag.o = toggled(drag.o); drag.manual = true; }
     else primed = toggled(primed);
   }
-  // Manual turns lock this carry. Only the synthetic bot uses roll; camera hands aim along a gap.
+  // Manual turns lock this carry. Only the synthetic bot uses roll; human input aims along a gap.
   if (drag?.kind === 'fence' && useRoll && h?.pinching && !drag.manual) {
     drag.o = roll.update(h.roll);
   }

@@ -48,6 +48,20 @@ console.log('after pawn', JSON.stringify({ pawns: afterMove.pawns, turn: afterMo
 
 // The machine takes a turn. Wait until it is ours again, then place a horizontal fence.
 await page.waitForFunction(() => window.__game.turn === 0 && window.__game.phase === 'play', null, { timeout: 4000 }).catch(() => {});
+await page.mouse.move(stock.x, stock.y);
+await page.mouse.down();
+await page.waitForTimeout(350);
+const horizontal = px(await page.evaluate(() => window.__game.slot(2.3, 3)));
+const vertical = px(await page.evaluate(() => window.__game.slot(2, 3.3)));
+await page.mouse.move(horizontal.x, horizontal.y);
+await page.waitForTimeout(280);
+assert.equal((await game()).holding?.o, 'h', 'pointer follows a horizontal gap');
+await page.mouse.move(vertical.x, vertical.y);
+await page.waitForTimeout(280);
+assert.equal((await game()).holding?.o, 'v', 'pointer follows a vertical gap');
+await page.mouse.move(0, 0);
+await page.mouse.up();
+await page.waitForTimeout(400);
 await page.keyboard.press('r');
 await drag(stock, slot);
 await page.screenshot({ path: `captures/mouse-${top ? 'top' : 'angled'}-play.png` });

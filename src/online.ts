@@ -5,6 +5,7 @@ import { ROOM_CODE, type RoomError, type RoomMessage, type RoomSnapshot } from '
 type ErrorCode = RoomError | 'network' | 'code' | 'replaced' | 'storage';
 interface Session { code: string; player: Player; token: string }
 type Intent = { type: 'ready' | 'unready' | 'rematch' } | { type: 'swap'; revision: number } | { type: 'action'; revision: number; action: Action };
+const apiOrigin = location.origin === 'https://aurvallab.github.io' ? 'https://quoridor-3d.2911733707.workers.dev' : location.origin;
 
 export class Online {
   session: Session | null = null;
@@ -38,7 +39,7 @@ export class Online {
     let token: string | null = null;
     try { if (code) token = sessionStorage.getItem('quoridor.room.' + code); } catch { /* usable until reload */ }
     try {
-      const response = await fetch(code ? `/api/rooms/${code}/join` : '/api/rooms', {
+      const response = await fetch(new URL(code ? `/api/rooms/${code}/join` : '/api/rooms', apiOrigin), {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(token ? { token } : {}),
         signal: AbortSignal.timeout(12_000),
       });
@@ -57,8 +58,8 @@ export class Online {
 
   private connect() {
     if (!this.session || this.ws) return;
-    const url = new URL(`/api/rooms/${this.session.code}/socket`, location.href);
-    url.protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const url = new URL(`/api/rooms/${this.session.code}/socket`, apiOrigin);
+    url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
     const ws = this.ws = new WebSocket(url, ['quoridor', 'seat.' + this.session.token]);
     ws.onopen = () => {
       if (ws !== this.ws) return;
