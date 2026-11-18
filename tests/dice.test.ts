@@ -58,6 +58,9 @@ describe('opening coin toss', () => {
       for (let i = 0; i < 84; i++) roll.step(1 / 120); // 1.2s total: still bouncing/spinning
       expect(roll.settled, `seed ${seed} before 1.8s`).toBe(false);
 
+      for (let i = 0; i < 96; i++) roll.step(1 / 120); // 2.0s total: delayed flatten/settle
+      expect(roll.settled, `seed ${seed} before 2.0s`).toBe(false);
+
       let prevPose = roll.poses()[0];
       for (let i = 0; i < 120 * 8 && !roll.settled; i++) {
         prevPose = roll.poses()[0];
@@ -74,17 +77,31 @@ describe('opening coin toss', () => {
       expect(Math.abs(pose.z)).toBeLessThan(0.8);
       const expectedFace = roll.first === 0 ? 1 : 2;
       expect(pose.face).toBe(expectedFace);
+      const prevQ = { x: prevPose.qx, y: prevPose.qy, z: prevPose.qz, w: prevPose.qw };
+      const prevTop = axes.map(axis => ({ face: axis.face, y: rotateVec(prevQ, axis.v).y })).sort((a, b) => b.y - a.y)[0];
+      expect(prevTop.face, `seed ${seed} pre-freeze face`).toBe(pose.face);
       const q = { x: pose.qx, y: pose.qy, z: pose.qz, w: pose.qw };
       const top = axes.map(axis => ({ face: axis.face, y: rotateVec(q, axis.v).y })).sort((a, b) => b.y - a.y)[0];
       expect(top.face).toBe(pose.face);
       expect(top.y).toBeGreaterThan(0.98);
     }
 
-    for (const tieSeed of [seedFor(0, true), seedFor(1, true)]) {
+    const tieSeeds = new Set([seedFor(0, true), seedFor(1, true)]);
+    for (let seed = 1; seed <= 250; seed++) {
+      if ((Math.imul(seed, 2654435761) >>> 28) === 0) tieSeeds.add(seed);
+    }
+    for (const tieSeed of tieSeeds) {
       const roll = new DiceRoll(tieSeed);
-      for (let i = 0; i < 120 * 8 && !roll.settled; i++) roll.step(1 / 120);
+      let prevPose = roll.poses()[0];
+      for (let i = 0; i < 120 * 8 && !roll.settled; i++) {
+        prevPose = roll.poses()[0];
+        roll.step(1 / 120);
+      }
       expect(roll.settled).toBe(true);
       expect(roll.first).toBeNull();
+      const prevQ = { x: prevPose.qx, y: prevPose.qy, z: prevPose.qz, w: prevPose.qw };
+      expect(prevPose.y, `tieSeed ${tieSeed} pre-freeze height`).toBeGreaterThan(BOARD_Y + COIN_RADIUS * 0.85);
+      expect(Math.abs(rotateVec(prevQ, { x: 0, y: 1, z: 0 }).y), `tieSeed ${tieSeed} pre-freeze normal`).toBeLessThan(0.2);
       const [tiePose] = roll.poses();
       expect(tiePose.face).toBeNull();
       expect(tiePose.y).toBeGreaterThan(BOARD_Y + COIN_RADIUS * 0.9);
@@ -137,6 +154,9 @@ describe('opening coin toss', () => {
     expect(roll.poses()[0].edge).toBe(true);
     expect(roll.rethrow()).toBe(true);
     expect(roll.edgeStand).toBe(false);
+    expect(roll.settled).toBe(false);
+    expect(openingCaption(roll, true, 0)).toBe('抛掷先手硬币，决定双方先后手……');
+    expect(openingCaption(roll, false, 0)).toBe('Flipping the opening coin for first move…');
     forward(roll);
     expect(roll.done).toBe(true);
     expect(roll.first).toBe(0);

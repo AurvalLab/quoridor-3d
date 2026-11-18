@@ -32,7 +32,7 @@ export function referenceFrame(width: number, height: number) {
 export const REFERENCE_STOCK = [{ x: 172, y: 755 }, { x: 1368, y: 343 }] as const;
 
 export function referenceStockAt(x: number, y: number): 0 | 1 | null {
-  if (x >= 25 && x <= 322 && y >= 694 && y <= 819) return 0;
+  if (x >= 25 && x <= 336 && y >= 665 && y <= 819) return 0;
   if (x >= 1230 && x <= 1510 && y >= 300 && y <= 389) return 1;
   return null;
 }

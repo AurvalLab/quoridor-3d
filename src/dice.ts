@@ -19,6 +19,14 @@ const INV_M = 1 / MASS;
 const INV_I = 1 / INERTIA;
 const LIMIT = 0.78;
 const MAX_ATTEMPTS = 8;
+const FLAT_ASSIST_START = 2.25;
+const FLAT_TIP_START = 2.55;
+const FLAT_DAMP_START = 2.75;
+const FLAT_MIN_SETTLE = 2.35;
+const FLAT_MAX_TIME = 4.2;
+const RIM_MIN_SETTLE = 1.85;
+const RIM_MAX_TIME = 3.4;
+const RIM_AXIS: V3 = { x: 0.78, y: 0, z: 0.6258 };
 
 export interface DiePose {
   owner: Player;
@@ -209,19 +217,28 @@ function worldRim(d: Coin): V3[] {
 }
 
 function collideFloor(d: Coin): number {
-  let deepest: V3 | null = null;
   let depth = 0;
+  let wx = 0;
+  let wy = 0;
+  let wz = 0;
+  let wsum = 0;
   for (const pt of worldRim(d)) {
     const pen = BOARD_Y - pt.y;
-    if (pen > depth) { depth = pen; deepest = pt; }
+    if (pen > 0) {
+      if (pen > depth) depth = pen;
+      wx += pt.x * pen;
+      wy += pt.y * pen;
+      wz += pt.z * pen;
+      wsum += pen;
+    }
   }
-  if (!deepest || depth <= 0) return 0;
+  if (depth <= 0 || wsum <= 0) return 0;
   const lift = Math.min(depth, 0.06);
   d.p.y += lift;
-  deepest.y += lift;
-  const vn = d.v.y + (d.w.z * (deepest.x - d.p.x) - d.w.x * (deepest.z - d.p.z));
+  const contact: V3 = { x: wx / wsum, y: wy / wsum + lift, z: wz / wsum };
+  const vn = d.v.y + (d.w.z * (contact.x - d.p.x) - d.w.x * (contact.z - d.p.z));
   const bounce = vn < -1.8 ? 0.42 : vn < -0.75 ? 0.24 : 0;
-  return impulse(d, deepest, UP, bounce, 0.24);
+  return impulse(d, contact, UP, bounce, 0.24);
 }
 
 function clampAxis(d: Coin, axis: 'x' | 'z', min: number, max: number): number {
@@ -240,17 +257,23 @@ function collideBounds(d: Coin, simTime: number): number {
 }
 
 function assistFlat(d: Coin, simTime: number, dt: number) {
-  if (simTime < 1.45) return;
+  if (simTime < FLAT_ASSIST_START || d.p.y > BOARD_Y + COIN_RADIUS + 0.15) return;
   const speed = Math.hypot(d.v.x, d.v.y, d.v.z);
   const spin = Math.hypot(d.w.x, d.w.y, d.w.z);
   const { normal } = topFace(d.q);
-  if (speed < 2.2 && spin < 14 && normal.y > 0.25) {
-    const gain = (normal.y > 0.9 ? 48 : normal.y > 0.7 ? 28 : 14) * dt;
-    d.w.x += -normal.z * gain;
-    d.w.z += normal.x * gain;
+  if (speed < 2.2 && spin < 14) {
+    if (normal.y > 0.25) {
+      const gain = (normal.y > 0.9 ? 48 : normal.y > 0.7 ? 28 : 16) * dt;
+      d.w.x += -normal.z * gain;
+      d.w.z += normal.x * gain;
+    } else if (simTime > FLAT_TIP_START) {
+      const h = Math.hypot(normal.x, normal.z) || 1;
+      d.w.x += -(normal.z / h) * 22 * dt;
+      d.w.z += (normal.x / h) * 22 * dt;
+    }
   }
-  if (simTime > 2.0 && normal.y > 0.85) {
-    const damp = Math.exp(-6 * dt);
+  if (simTime > FLAT_DAMP_START && normal.y > 0.85) {
+    const damp = Math.exp(-7 * dt);
     d.w.x *= damp;
     d.w.y *= damp;
     d.w.z *= damp;
@@ -259,23 +282,29 @@ function assistFlat(d: Coin, simTime: number, dt: number) {
   }
 }
 
+function rimTarget(normal: V3): V3 {
+  const sign = normal.x * RIM_AXIS.x + normal.z * RIM_AXIS.z >= 0 ? 1 : -1;
+  return { x: RIM_AXIS.x * sign, y: 0, z: RIM_AXIS.z * sign };
+}
+
 function assistRim(d: Coin, simTime: number, dt: number) {
-  if (simTime < 1.35) return;
-  const speed = Math.hypot(d.v.x, d.v.y, d.v.z);
-  if (speed > 4.2) return;
+  if (simTime < 1.15) return;
   const normal = rotateVec(d.q, UP);
-  const target: V3 = normal.x >= 0 ? { x: 0.78, y: 0, z: 0.6258 } : { x: -0.78, y: 0, z: 0.6258 };
+  const target = rimTarget(normal);
   const cx = normal.y * target.z - normal.z * target.y;
   const cy = normal.z * target.x - normal.x * target.z;
   const cz = normal.x * target.y - normal.y * target.x;
-  d.w.x += cx * 32 * dt;
-  d.w.y += cy * 32 * dt;
-  d.w.z += cz * 32 * dt;
-  d.w.x *= 0.92;
-  d.w.y *= 0.92;
-  d.w.z *= 0.92;
-  d.v.x *= 0.9;
-  d.v.z *= 0.9;
+  const nearBoard = d.p.y < BOARD_Y + COIN_RADIUS + 0.45;
+  const stiffness = nearBoard ? 95 : d.v.y < 1.0 ? 42 : 16;
+  const damp = Math.exp((nearBoard ? -10 : -4.5) * dt);
+  d.w.x = (d.w.x + cx * stiffness * dt) * damp;
+  d.w.y = (d.w.y + cy * stiffness * dt) * damp;
+  d.w.z = (d.w.z + cz * stiffness * dt) * damp;
+  if (nearBoard) {
+    const moveDamp = Math.exp(-5 * dt);
+    d.v.x *= moveDamp;
+    d.v.z *= moveDamp;
+  }
 }
 
 function integrate(d: Coin, simTime: number, dt: number, rimStand: boolean) {
@@ -312,7 +341,7 @@ function restingRim(d: Coin): boolean {
   if (Math.hypot(d.v.x, d.v.y, d.v.z) > 0.45) return false;
   if (Math.hypot(d.w.x, d.w.y, d.w.z) > 1.2) return false;
   const normal = rotateVec(d.q, UP);
-  return Math.abs(normal.y) < 0.15 && d.p.y < BOARD_Y + COIN_RADIUS + 0.12;
+  return Math.abs(normal.y) < 0.15 && d.p.y < BOARD_Y + COIN_RADIUS + 0.12 && d.p.y > BOARD_Y + COIN_RADIUS * 0.88;
 }
 
 function settleCoin(d: Coin, targetFace?: 1 | 2) {
@@ -333,7 +362,7 @@ function settleCoin(d: Coin, targetFace?: 1 | 2) {
 
 function settleRim(d: Coin) {
   const normal = rotateVec(d.q, UP);
-  const target: V3 = normal.x >= 0 ? { x: 0.78, y: 0, z: 0.6258 } : { x: -0.78, y: 0, z: 0.6258 };
+  const target = rimTarget(normal);
   d.q = qnorm(qmul(quatFromTo(normal, target), d.q));
   d.v = { x: 0, y: 0, z: 0 };
   d.w = { x: 0, y: 0, z: 0 };
@@ -386,11 +415,11 @@ function throwCoin(rng: () => number, rimStand: boolean): Coin {
     const probe = cloneCoin(coin);
     let simTime = 0;
     let rest = 0;
-    for (let i = 0; i < 450; i++) {
+    for (let i = 0; i < 520; i++) {
       stepCoinPhysics(probe, simTime, STEP, false);
       simTime += STEP;
       rest = restingFlat(probe) ? rest + STEP : 0;
-      if ((simTime > 1.85 && rest > 0.18) || simTime > 3.4) break;
+      if ((simTime > FLAT_MIN_SETTLE && rest > 0.18) || simTime > FLAT_MAX_TIME) break;
     }
     if (topFace(probe.q).face !== targetFace) {
       coin.q = qnorm(qmul(coin.q, INVOLUTION_X180));
@@ -406,9 +435,10 @@ export function openingCaption(
 ): string {
   const names = chinese ? ['月牙白', '翡翠绿'] : ['Moon White', 'Jade Green'];
   const intro = chinese ? '抛掷先手硬币，决定双方先后手……' : 'Flipping the opening coin for first move…';
+  if (!roll.settled) return intro;
   const last = roll.attempts[roll.attempts.length - 1];
   if (!last) return intro;
-  if (!roll.settled || roll.first === null) {
+  if (roll.first === null) {
     return chinese
       ? '✨ 奇迹！硬币立住了 · 点击收下祝福并重新开始'
       : '✨ Miracle! Coin stood on edge · Click to claim blessing & restart';
@@ -500,12 +530,15 @@ export class DiceRoll {
   }
 
   private freeze() {
-    if (this.rimStand) {
+    const rimUpright = this.rimStand
+      && Math.abs(rotateVec(this.coin.q, UP).y) < 0.35
+      && this.coin.p.y > BOARD_Y + COIN_RADIUS * 0.75;
+    if (rimUpright) {
       settleRim(this.coin);
       this.attempts.push({ faces: [1, 0, 2, 0], totals: [1, 1] });
       this.first = null;
     } else {
-      const targetFace: 1 | 2 = this.coin.owner === 0 ? 1 : 2;
+      const targetFace: 1 | 2 = this.rimStand ? topFace(this.coin.q).face : (this.coin.owner === 0 ? 1 : 2);
       settleCoin(this.coin, targetFace);
       const face = topFace(this.coin.q).face;
       const winner: Player = face === 1 ? 0 : 1;
@@ -524,7 +557,9 @@ export class DiceRoll {
     const isResting = this.rimStand ? restingRim(this.coin) : restingFlat(this.coin);
     if (isResting) this.rest += dt;
     else this.rest = 0;
-    if ((this.simTime > 1.85 && this.rest > 0.18) || this.simTime > 3.4) this.freeze();
+    const minTime = this.rimStand ? RIM_MIN_SETTLE : FLAT_MIN_SETTLE;
+    const maxTime = this.rimStand ? RIM_MAX_TIME : FLAT_MAX_TIME;
+    if ((this.simTime > minTime && this.rest > 0.18) || this.simTime > maxTime) this.freeze();
     this.impact = Math.max(this.impact, hit);
   }
 

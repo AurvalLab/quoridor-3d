@@ -24,6 +24,12 @@ describe('reference scene input calibration', () => {
       const result = referencePoint(world.x, world.z);
       expect(referenceStockAt(result.x, result.y)).toBe(owner);
     }
+    expect(referenceStockAt(75, 677)).toBe(0);
+    expect(referenceStockAt(190, 720)).toBe(0);
+    expect(referenceStockAt(325, 768)).toBe(0);
+    expect(referenceStockAt(15, 720)).toBe(null);
+    expect(referenceStockAt(345, 720)).toBe(null);
+    expect(referenceStockAt(190, 650)).toBe(null);
     expect(referenceStockAt(800, 500)).toBe(null);
     expect(referenceStockAt(1200, 200)).toBe(null);
   });

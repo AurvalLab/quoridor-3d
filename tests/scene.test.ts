@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import * as THREE from 'three';
-import { cellCenter, fenceOrientation, frameCamera, frameReferenceCamera, frameTopCamera, reverseRenderState, Scene, slotCenter, type RenderState } from '../src/scene';
-import { rackLayout } from '../src/fence-box';
+import { cellCenter, createPawnVisualState, fenceOrientation, frameCamera, frameReferenceCamera, frameTopCamera, reverseRenderState, Scene, sceneLightDirection, slotCenter, updatePawnVisuals, type DragView, type RenderState } from '../src/scene';
+import { rackLayout, stockSlot } from '../src/fence-box';
 import { referenceFrame, referencePoint } from '../src/reference-projection';
 
 describe('board views', () => {
@@ -70,6 +70,12 @@ describe('board views', () => {
     expect(reversed.fences[0]).toEqual({ c: 6, r: 4, o: 'h', owner: 0 });
     expect(reversed.remaining).toEqual([8, 9]);
     expect(reverseRenderState(reversed)).toEqual(state);
+  });
+  it('keeps viewer-relative directional lighting symmetric for Jade in non-hybrid views', () => {
+    expect(sceneLightDirection(true, 0)).toBe(1);
+    expect(sceneLightDirection(true, 1)).toBe(1);
+    expect(sceneLightDirection(false, 0)).toBe(1);
+    expect(sceneLightDirection(false, 1)).toBe(-1);
   });
   it('puts each online player near the bottom in both views', () => {
     for (const view of ['angled', 'top'] as const) for (const player of [0, 1] as const) {
@@ -141,6 +147,41 @@ describe('board views', () => {
     expect(new THREE.Vector3(0, 0.08, 0).project(camera).y).toBeGreaterThan(0);
     expect(new THREE.Vector3(0, 0.08, 5.2).project(camera).y).toBeGreaterThan(-0.75);
   });
+
+  it('consumes fence stock from the side closest to the board for both players and views', () => {
+    for (const aspect of [1440 / 900, 375 / 812]) {
+      const portrait = aspect < 1;
+      const racks = rackLayout(portrait);
+      for (const view of ['angled', 'top'] as const) {
+        for (const player of [0, 1] as const) {
+          const camera = view === 'top'
+            ? new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 80)
+            : new THREE.PerspectiveCamera(32, 1, 0.1, 80);
+          frameCamera(camera, aspect, view, player);
+          const project = (x: number, z: number) => new THREE.Vector3(x, 0.08, z).project(camera);
+          const center = project(0, 0);
+          for (const rack of racks) {
+            const first = stockSlot(rack, 9);
+            const last = stockSlot(rack, 0);
+            const pFirst = project(first.x, first.z);
+            const pLast = project(last.x, last.z);
+            expect(Math.hypot(pFirst.x - center.x, pFirst.y - center.y))
+              .toBeLessThan(Math.hypot(pLast.x - center.x, pLast.y - center.y));
+            if (!portrait) {
+              const pRack = project(rack.x, rack.z);
+              if (rack.player === player) {
+                expect(pRack.x).toBeLessThan(0);
+                expect(pFirst.x).toBeGreaterThan(pLast.x);
+              } else {
+                expect(pRack.x).toBeGreaterThan(0);
+                expect(pFirst.x).toBeLessThan(pLast.x);
+              }
+            }
+          }
+        }
+      }
+    }
+  });
 });
 
 describe('automatic camera fence direction', () => {
@@ -162,5 +203,120 @@ describe('automatic camera fence direction', () => {
         expect(fenceOrientation(x + dx, z + dz, slot, previous)).toBe(previous);
       }
     }
+  });
+});
+
+describe('continuous pawn motion', () => {
+  const dt = 1 / 60;
+
+  it('sets a dragged pawn directly down onto the target cell without snapping back to origin', () => {
+    const state = createPawnVisualState();
+    const startPawns: [{ c: number; r: number }, { c: number; r: number }] = [{ c: 4, r: 0 }, { c: 4, r: 8 }];
+    let t = 0;
+    expect(updatePawnVisuals(state, startPawns, 0, null, t, dt, false)).toBe(false);
+    expect(state.poses[0].z).toBe(4);
+
+    const drag: DragView = {
+      kind: 'pawn',
+      o: 'v',
+      x: 0,
+      z: 3,
+      legal: true,
+      cell: { c: 4, r: 1 },
+      slot: null,
+      owner: 0,
+      manual: false,
+    };
+    for (let i = 0; i < 12; i++) {
+      t += dt;
+      updatePawnVisuals(state, startPawns, 0, drag, t, dt, false);
+    }
+    expect(state.poses[0].y).toBeGreaterThan(0.25);
+    expect(state.poses[0].z).toBeLessThan(3.15);
+
+    const movedPawns: [{ c: number; r: number }, { c: number; r: number }] = [{ c: 4, r: 1 }, { c: 4, r: 8 }];
+    t += dt;
+    expect(updatePawnVisuals(state, movedPawns, 0, null, t, dt, false)).toBe(true);
+    expect(state.anims[0]?.kind).toBe('place');
+
+    let prevY = state.poses[0].y;
+    for (let i = 0; i < 20; i++) {
+      expect(state.poses[0].z).toBeLessThan(3.25);
+      t += dt;
+      const active = updatePawnVisuals(state, movedPawns, 0, null, t, dt, false);
+      expect(state.poses[0].y).toBeLessThanOrEqual(prevY + 1e-6);
+      prevY = state.poses[0].y;
+      if (!active) break;
+    }
+    expect(state.poses[0]).toEqual({ x: 0, y: 0.08, z: 3, rx: 0, rz: 0 });
+  });
+
+  it('glides smoothly back to home when a pawn drag is canceled or released illegally', () => {
+    const state = createPawnVisualState();
+    const pawns: [{ c: number; r: number }, { c: number; r: number }] = [{ c: 4, r: 0 }, { c: 4, r: 8 }];
+    let t = 0;
+    updatePawnVisuals(state, pawns, 0, null, t, dt, false);
+
+    const drag: DragView = {
+      kind: 'pawn',
+      o: 'v',
+      x: 1.2,
+      z: 2.8,
+      legal: false,
+      cell: null,
+      slot: null,
+      owner: 0,
+      manual: false,
+    };
+    for (let i = 0; i < 15; i++) {
+      t += dt;
+      updatePawnVisuals(state, pawns, 0, drag, t, dt, false);
+    }
+    expect(state.poses[0].x).toBeGreaterThan(0.8);
+
+    t += dt;
+    expect(updatePawnVisuals(state, pawns, 0, null, t, dt, false)).toBe(true);
+    expect(state.anims[0]?.kind).toBe('return');
+    expect(state.poses[0].x).toBeGreaterThan(0.5);
+
+    for (let i = 0; i < 20; i++) {
+      t += dt;
+      updatePawnVisuals(state, pawns, 0, null, t, dt, false);
+    }
+    expect(state.poses[0]).toEqual({ x: 0, y: 0.08, z: 4, rx: 0, rz: 0 });
+  });
+
+  it('keeps a parabolic hop for non-dragged AI or opponent moves', () => {
+    const state = createPawnVisualState();
+    let t = 0;
+    updatePawnVisuals(state, [{ c: 4, r: 0 }, { c: 4, r: 8 }], 0, null, t, dt, false);
+
+    t += dt;
+    const stepPawns: [{ c: number; r: number }, { c: number; r: number }] = [{ c: 4, r: 0 }, { c: 4, r: 7 }];
+    expect(updatePawnVisuals(state, stepPawns, 0, null, t, dt, false)).toBe(true);
+    expect(state.anims[1]?.kind).toBe('hop');
+
+    let stepMaxY = 0;
+    for (let i = 0; i < 20; i++) {
+      t += dt;
+      updatePawnVisuals(state, stepPawns, 0, null, t, dt, false);
+      stepMaxY = Math.max(stepMaxY, state.poses[1].y);
+    }
+    expect(stepMaxY).toBeGreaterThan(0.22);
+    expect(state.poses[1]).toEqual({ x: 0, y: 0.08, z: -3, rx: 0, rz: 0 });
+
+    t += dt;
+    const jumpPawns: [{ c: number; r: number }, { c: number; r: number }] = [{ c: 4, r: 0 }, { c: 4, r: 5 }];
+    expect(updatePawnVisuals(state, jumpPawns, 0, null, t, dt, false)).toBe(true);
+    expect(state.anims[1]?.kind).toBe('hop');
+
+    let jumpMaxY = 0;
+    for (let i = 0; i < 25; i++) {
+      t += dt;
+      updatePawnVisuals(state, jumpPawns, 0, null, t, dt, false);
+      jumpMaxY = Math.max(jumpMaxY, state.poses[1].y);
+    }
+    expect(jumpMaxY).toBeGreaterThan(stepMaxY);
+    expect(state.poses[1]).toEqual({ x: 0, y: 0.08, z: -1, rx: 0, rz: 0 });
   });
 });

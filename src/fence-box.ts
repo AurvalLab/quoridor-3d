@@ -23,6 +23,19 @@ export function stockOffset(index: number, portrait: boolean) {
   return (index - 4.5) * STOCK_PITCH * (portrait ? 0.45 : 1);
 }
 
+/**
+ * World X/Z center of stock slot `index` (0 = farthest from board, 9 = closest to board),
+ * so consuming from high index down (`visible = i < remaining`) always takes from the side
+ * nearest the board for both players in both landscape and portrait layouts.
+ */
+export function stockSlot(rack: Rack, index: number): { x: number; z: number } {
+  const along = stockOffset(index, rack.along === 'z');
+  if (rack.along === 'z') {
+    return { x: rack.x, z: rack.z - Math.sign(rack.z) * along };
+  }
+  return { x: rack.x - Math.sign(rack.x) * along, z: rack.z };
+}
+
 export function fenceBox(walnut: THREE.Material, brass: THREE.Material) {
   const box = new THREE.Group();
   box.name = 'slotted-fence-box';

@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { cellCenter, frameCamera, slotCenter } from '../src/scene';
 import { studyProps } from '../src/study-props';
 import { layoutStudyRoom, studyRoom } from '../src/study-room';
-import { fenceBox, rackLayout, stockOffset, STOCK_HEIGHT, STOCK_Y } from '../src/fence-box';
+import { fenceBox, rackLayout, stockSlot, STOCK_HEIGHT, STOCK_Y } from '../src/fence-box';
 
 const room = studyRoom(new THREE.Texture(), new THREE.Texture());
 const decor = studyProps(new THREE.Texture());
@@ -81,10 +81,16 @@ describe('slotted fence coffers', () => {
         expect(bounds.min.z).toBeGreaterThan(tableBounds.min.z);
         expect(bounds.max.z).toBeLessThan(tableBounds.max.z);
         const centres = new Set<number>();
+        const slots = Array.from({ length: 10 }, (_, i) => stockSlot(rack, i));
         for (let i = 0; i < 10; i++) {
-          const p = new THREE.Vector3(portrait ? rack.x : rack.x + stockOffset(i, false), STOCK_Y, portrait ? rack.z - stockOffset(i, true) : rack.z);
+          const slot = slots[i];
+          const p = new THREE.Vector3(slot.x, STOCK_Y, slot.z);
           expect(bounds.containsPoint(p)).toBe(true);
-          centres.add(stockOffset(i, portrait));
+          centres.add(rack.along === 'z' ? slot.z : slot.x);
+          if (i < 9) {
+            const next = slots[i + 1];
+            expect(Math.hypot(next.x, next.z)).toBeLessThan(Math.hypot(slot.x, slot.z));
+          }
         }
         expect(centres.size).toBe(10);
         expect(STOCK_Y + 0.64 * STOCK_HEIGHT).toBeLessThan(0.3);

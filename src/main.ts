@@ -53,6 +53,7 @@ sound.muted = flag('mute');
 
 let primed: Orientation = 'v';
 let drag: DragView | null = null;
+let pendingPawn: { owner: Player; cell: { c: number; r: number } } | null = null;
 const simulations = { novice: 2500, average: 7500, good: 20000 } as const;
 let difficulty: keyof typeof simulations = 'novice';
 let aiWorker: Worker | null = null;
@@ -210,6 +211,7 @@ function begin() {
   roll.reset();
   primed = 'v';
   drag = null;
+  pendingPawn = null;
   armAt = performance.now() + 500;
   show(null);
   paintMode();
@@ -285,6 +287,7 @@ function selectMode(mode: Mode) {
   hideEasterEgg();
   rollKey = '';
   Object.assign(game, createGame(mode));
+  pendingPawn = null;
   cancelCarry();
   show('title');
   paintMode();
@@ -501,7 +504,9 @@ function frame(now: number) {
       if (drag.legal && aim.kind !== 'none') {
         const action = drag.kind === 'pawn' ? { type: 'pawn' as const, c: aim.c, r: aim.r }
           : { type: 'fence' as const, c: aim.c, r: aim.r, o: drag.o };
+        const carriedOwner = drag.owner;
         if (!online.command({ type: 'action', revision: online.state!.revision, action })) sound.no();
+        else if (action.type === 'pawn') pendingPawn = { owner: carriedOwner, cell: { c: action.c, r: action.r } };
       } else sound.no();
     } else if (human) {
       const res = releaseDrag(game, drag.kind === 'pawn' ? { kind: 'pawn' } : { kind: 'fence', o: drag.o }, aimOf(drag.kind, drag));
@@ -546,11 +551,15 @@ function frame(now: number) {
   if (pinchEdge === 'press' && openingRoll?.edgeStand && now - easterAt > 600) restartFromEasterEgg();
   else if (pinchEdge === 'press' && game.phase === 'results' && game.mode !== 'online' && now - resultsAt > 1500) begin();
 
+  if (game.mode !== 'online' || !online.pending) pendingPawn = null;
+  const renderPawns: [typeof game.pawns[0], typeof game.pawns[1]] = pendingPawn
+    ? (pendingPawn.owner === 0 ? [pendingPawn.cell, game.pawns[1]] : [game.pawns[0], pendingPawn.cell])
+    : game.pawns;
   const showLegal = human && drag?.kind !== 'fence';
   const legal = showLegal ? legalMoves(game, game.turn) : [];
   paintHud(thinking);
   scene.render({
-    pawns: game.pawns,
+    pawns: renderPawns,
     fences: game.fences,
     remaining: game.remaining,
     turn: game.turn,

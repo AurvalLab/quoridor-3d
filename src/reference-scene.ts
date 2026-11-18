@@ -69,22 +69,27 @@ export class ReferenceScene {
     if (this.reverse) {
       const near = new Path2D('M800 665 C790 665 783 672 783 682 C783 689 786 694 790 697 L786 701 C784 708 778 713 774 719 C769 724 769 731 773 736 C779 744 791 746 800 746 C813 746 825 742 828 735 C831 728 827 721 822 716 C817 711 814 706 813 700 L810 697 C815 693 817 688 817 682 C817 672 810 665 800 665 Z');
       const far = new Path2D('M794 196 C785 196 779 202 779 211 C779 218 782 223 786 225 L783 230 C782 239 778 244 773 249 C768 254 769 261 774 265 C779 269 788 271 795 271 C807 271 816 266 817 260 C818 255 815 250 810 246 C806 242 804 237 804 230 L802 225 C807 222 809 217 809 211 C809 202 803 196 794 196 Z');
-      this.pawns = [this.sprite(765, 663, 70, 87, near, 800, 735), this.sprite(764, 193, 64, 81, far, 795, 256)];
-      const farContext = this.pawns[1].canvas.getContext('2d')!;
-      const farPixels = farContext.getImageData(0, 0, 64, 81);
-      for (let i = 0; i < farPixels.data.length; i += 4) {
-        const red = farPixels.data[i], green = farPixels.data[i + 1];
-        farPixels.data[i + 3] *= Math.max(0, Math.min(1, (38 - red + green) / 8, (red - 65) / 35));
-      }
-      farContext.putImageData(farPixels, 0, 0);
-      this.pawns[1].pixels = farPixels.data;
+      const hitSprite = (x: number, y: number, w: number, h: number, path: Path2D, anchorX: number, anchorY: number): Sprite => {
+        const canvas = document.createElement('canvas');
+        canvas.width = w; canvas.height = h;
+        const ctx = canvas.getContext('2d')!;
+        ctx.translate(-x, -y);
+        ctx.fillStyle = '#fff';
+        ctx.fill(path);
+        return { canvas, x, y, anchorX: anchorX - x, anchorY: anchorY - y, pixels: ctx.getImageData(0, 0, w, h).data };
+      };
+      this.pawns = [hitSprite(765, 663, 70, 87, near, 800, 735), hitSprite(764, 193, 64, 81, far, 795, 256)];
       for (let i = 0; i < 10; i++) {
-        const x = 71 + i * 27.3, y = 677;
-        const p = new Path2D(); p.moveTo(x, y); p.lineTo(x + 10, y); p.lineTo(x - 5, 751); p.lineTo(x - 8, 768); p.lineTo(x - 18, 768); p.lineTo(x - 19, 751); p.closePath();
-        this.stock[0].push(this.sprite(x - 20, 675, 32, 96, p, x, 768));
-        const fx = 1240 + i * 25.2;
-        const f = new Path2D(); f.moveTo(fx, 301); f.lineTo(fx + 10, 301); f.lineTo(fx + 19, 357); f.lineTo(fx + 18, 369); f.lineTo(fx + 7, 369); f.closePath();
-        this.stock[1].push(this.sprite(fx - 1, 299, 23, 73, f, fx, 369));
+        const topX = 70 + i * 26.55, botX = 53 + i * 27.15;
+        const p = new Path2D();
+        p.moveTo(topX - 1, 675); p.lineTo(topX + 10, 675); p.lineTo(botX + 10, 755);
+        p.lineTo(botX + 10, 768); p.lineTo(botX - 1, 768); p.lineTo(botX - 1, 755); p.closePath();
+        this.stock[0].push(this.sprite(Math.floor(botX) - 2, 674, 34, 96, p, botX, 768));
+        const fTopX = 1239 + i * 24.8, fBotX = 1248 + i * 25.25;
+        const f = new Path2D();
+        f.moveTo(fTopX - 1, 299); f.lineTo(fTopX + 10, 299); f.lineTo(fBotX + 10, 359);
+        f.lineTo(fBotX + 10, 371); f.lineTo(fBotX - 1, 371); f.lineTo(fBotX - 1, 359); f.closePath();
+        this.stock[1].push(this.sprite(Math.floor(fTopX) - 2, 298, 26, 75, f, fBotX, 371));
       }
       this.fenceGrain.width = 68; this.fenceGrain.height = 8;
       const g = this.fenceGrain.getContext('2d')!; g.translate(68, 0); g.rotate(Math.PI / 2); g.drawImage(this.original, 68, 680, 8, 68, 0, 0, 8, 68);
@@ -183,22 +188,6 @@ export class ReferenceScene {
     this.patch(1417, 65, 156, 44);
   }
 
-  private reverseLabels() {
-    const c = this.ctx;
-    c.save(); c.fillStyle = '#211209';
-    c.fillRect(475, 208, 634, 18); c.fillRect(429, 771, 749, 19);
-    for (let i = 0; i < 9; i++) {
-      const p = referencePoint(0, i - 4);
-      const left = referencePoint(-4.5, i - 4).x - 21, right = referencePoint(4.5, i - 4).x + 21;
-      c.fillStyle = '#211209'; c.fillRect(left - 24, p.y - 9, 33, 18); c.fillRect(right - 9, p.y - 9, 18, 18);
-      c.fillStyle = '#ebcc91'; c.textAlign = 'center'; c.textBaseline = 'middle'; c.font = `${i < 4 ? 14 : 16}px Georgia`;
-      c.fillText(String(i + 1), left, p.y); c.fillText(String(i + 1), right, p.y);
-      c.font = 'bold 15px Georgia'; c.fillText('IHGFEDCBA'[i], 514 + i * 69.5, 218);
-      c.font = 'bold 17px Georgia'; c.fillText('IHGFEDCBA'[i], 450 + i * 88.3, 781);
-    }
-    c.restore();
-  }
-
   render(s: RenderState) {
     if (!this.enabled) return;
     const c = this.ctx, frame = referenceFrame(innerWidth, innerHeight);
@@ -206,23 +195,29 @@ export class ReferenceScene {
     c.setTransform(ratioX, 0, 0, ratioY, 0, 0);
     c.fillStyle = '#1a100b'; c.fillRect(0, 0, innerWidth, innerHeight);
     c.translate(frame.x, frame.y); c.scale(frame.scale, frame.scale);
-    c.drawImage(this.reverse ? this.clean : this.original, 0, 0, REFERENCE_WIDTH, REFERENCE_HEIGHT);
-    if (this.reverse) this.reverseLabels();
-    const dynamic = true;
+    c.drawImage(this.original, 0, 0, REFERENCE_WIDTH, REFERENCE_HEIGHT);
+    const dynamic = !this.reverse;
     const initialLegal = s.showLegal && s.legal.length === 3 && s.legal.every(p => (p.r === 0 && (p.c === 3 || p.c === 5)) || (p.c === 4 && p.r === 1));
-    if (!initialLegal || dynamic) {
+    if (dynamic && (!initialLegal || dynamic)) {
       for (const [column, row] of [[3, 0], [4, 1], [5, 0]]) this.clearCell(column, row);
     }
     if (dynamic) { this.clearCell(4, 0); this.clearCell(4, 1); this.patch(762, 190, 72, 85); }
     for (const owner of [0, 1] as const) {
       const remaining = Math.max(0, s.remaining[owner] - (s.drag?.kind === 'fence' && s.drag.owner === owner ? 1 : 0));
-      if (this.reverse) {
-        for (let i = 0; i < remaining; i++) { const sprite = this.stock[owner][i]; c.drawImage(sprite.canvas, sprite.x, sprite.y); }
-      } else if (remaining < 10) {
-        const polygon = new Path2D(owner === 0 ? 'M53 697 L316 697 L307 809 L25 809 Z' : 'M1231 299 L1490 299 L1511 380 L1248 381 Z');
-        if (owner === 0) this.patch(24, 696, 295, 115, polygon);
-        else this.patch(1230, 298, 283, 85, polygon);
-        for (let i = 0; i < remaining; i++) { const sprite = this.stock[owner][i]; c.drawImage(sprite.canvas, sprite.x, sprite.y); }
+      const start = owner === 0 ? 0 : 10 - remaining;
+      const end = owner === 0 ? remaining : 10;
+      if (remaining < 10) {
+        const polygon = this.reverse
+          ? new Path2D(owner === 0 ? 'M50 672 L322 672 L306 769 L34 769 Z' : 'M1232 298 L1492 298 L1506 372 L1246 372 Z')
+          : new Path2D(owner === 0 ? 'M53 697 L316 697 L307 809 L25 809 Z' : 'M1231 299 L1490 299 L1511 380 L1248 381 Z');
+        if (this.reverse) {
+          if (owner === 0) this.patch(32, 670, 292, 101, polygon);
+          else this.patch(1230, 296, 278, 78, polygon);
+        } else {
+          if (owner === 0) this.patch(24, 696, 295, 115, polygon);
+          else this.patch(1230, 298, 283, 85, polygon);
+        }
+        for (let i = start; i < end; i++) { const sprite = this.stock[owner][i]; c.drawImage(sprite.canvas, sprite.x, sprite.y); }
       }
     }
     if ((!initialLegal || dynamic) && s.showLegal) for (const cell of s.legal) {

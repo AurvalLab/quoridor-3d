@@ -12,7 +12,7 @@ import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import type { Cell, Fence, Orientation, Player } from './rules';
 import { studyProps } from './study-props';
 import { layoutStudyRoom, studyRoom } from './study-room';
-import { fenceBox, rackLayout, STOCK_HEIGHT, STOCK_Y, stockOffset, PLACED_FENCE_COLORS } from './fence-box';
+import { fenceBox, rackLayout, STOCK_HEIGHT, STOCK_Y, stockSlot, PLACED_FENCE_COLORS } from './fence-box';
 import { ReferenceScene } from './reference-scene';
 import { TopScene } from './top-scene';
 import { referenceFrame, referencePoint, referenceStockAt, referenceWorld, REFERENCE_STOCK, REFERENCE_WIDTH, REFERENCE_HEIGHT } from './reference-projection';
@@ -149,6 +149,10 @@ export interface RenderState {
   dice?: DiePose[] | null;
 }
 
+export function sceneLightDirection(hybrid: boolean, player: Player): 1 | -1 {
+  return !hybrid && player === 1 ? -1 : 1;
+}
+
 export const flipCell = (cell: Cell): Cell => ({ c: 8 - cell.c, r: 8 - cell.r });
 export function reverseRenderState(s: RenderState): RenderState {
   const flipPlayer = (player: Player): Player => player === 0 ? 1 : 0;
@@ -223,7 +227,7 @@ function roundedBox(w: number, h: number, d: number, radius: number, material: T
   return new THREE.Mesh(new RoundedBoxGeometry(w, h, d, 1, radius), material);
 }
 
-function coordinateTexture() {
+function coordinateTexture(reverse = false) {
   const { c, g } = canvas(1024, 1024);
   g.fillStyle = '#ccb986';
   g.font = '22px Georgia';
@@ -231,8 +235,8 @@ function coordinateTexture() {
   g.textBaseline = 'middle';
   for (let i = 0; i < 9; i++) {
     const p = 512 + (i - 4) * 1024 / 10.25;
-    for (const y of [37, 987]) g.fillText(String.fromCharCode(65 + i), p, y);
-    for (const x of [37, 987]) g.fillText(String(9 - i), x, p);
+    for (const y of [37, 987]) g.fillText(reverse ? 'IHGFEDCBA'[i] : String.fromCharCode(65 + i), p, y);
+    for (const x of [37, 987]) g.fillText(String(reverse ? i + 1 : 9 - i), x, p);
   }
   const texture = new THREE.CanvasTexture(c);
   texture.colorSpace = THREE.SRGBColorSpace;
@@ -253,6 +257,218 @@ function backdrop(): THREE.Texture {
   return t;
 }
 
+export interface PawnPose {
+  x: number;
+  y: number;
+  z: number;
+  rx: number;
+  rz: number;
+}
+
+export type PawnAnimKind = 'hop' | 'place' | 'return';
+
+export interface PawnAnim {
+  kind: PawnAnimKind;
+  fromX: number;
+  fromY: number;
+  fromZ: number;
+  fromRx: number;
+  fromRz: number;
+  toX: number;
+  toZ: number;
+  start: number;
+  duration: number;
+  arc: number;
+}
+
+export interface PawnVisualState {
+  initialized: boolean;
+  lastPawns: [Cell, Cell];
+  lastFenceCount: number;
+  lastDragging: Player | null;
+  poses: [PawnPose, PawnPose];
+  anims: [PawnAnim | null, PawnAnim | null];
+}
+
+export function createPawnVisualState(): PawnVisualState {
+  const p0 = cellCenter(4, 0);
+  const p1 = cellCenter(4, 8);
+  return {
+    initialized: false,
+    lastPawns: [{ c: 4, r: 0 }, { c: 4, r: 8 }],
+    lastFenceCount: 0,
+    lastDragging: null,
+    poses: [
+      { x: p0.x, y: SURFACE, z: p0.z, rx: 0, rz: 0 },
+      { x: p1.x, y: SURFACE, z: p1.z, rx: 0, rz: 0 },
+    ],
+    anims: [null, null],
+  };
+}
+
+export function updatePawnVisuals(
+  state: PawnVisualState,
+  pawns: [Cell, Cell],
+  fenceCount: number,
+  drag: DragView | null,
+  t: number,
+  dt: number,
+  reducedMotion: boolean,
+): boolean {
+  const draggingPawn = drag?.kind === 'pawn' ? drag.owner : null;
+  if (!state.initialized || fenceCount < state.lastFenceCount) {
+    for (const i of [0, 1] as const) {
+      const p = cellCenter(pawns[i].c, pawns[i].r);
+      state.poses[i] = { x: p.x, y: SURFACE, z: p.z, rx: 0, rz: 0 };
+      state.anims[i] = null;
+    }
+    state.initialized = true;
+    state.lastPawns = [{ ...pawns[0] }, { ...pawns[1] }];
+    state.lastFenceCount = fenceCount;
+    state.lastDragging = null;
+  }
+
+  let animating = false;
+  for (const i of [0, 1] as const) {
+    const prev = state.lastPawns[i];
+    const next = pawns[i];
+    const moved = prev.c !== next.c || prev.r !== next.r;
+    const wasDragged = state.lastDragging === i && draggingPawn !== i;
+    const target = cellCenter(next.c, next.r);
+    const pose = state.poses[i];
+
+    if (draggingPawn === i && drag?.kind === 'pawn') {
+      state.anims[i] = null;
+      let tx = drag.x;
+      let tz = drag.z;
+      const ownCell = !!drag.cell && drag.cell.c === next.c && drag.cell.r === next.r;
+      let ty = ownCell ? SURFACE + 0.42 : SURFACE + 0.48;
+      if (drag.legal && drag.cell) {
+        const cp = cellCenter(drag.cell.c, drag.cell.r);
+        tx += (cp.x - tx) * 0.24;
+        tz += (cp.z - tz) * 0.24;
+        ty = SURFACE + 0.34;
+      }
+      if (reducedMotion) {
+        pose.x = tx;
+        pose.y = ty;
+        pose.z = tz;
+        pose.rx = 0;
+        pose.rz = 0;
+      } else {
+        const stepDt = Math.min(0.05, Math.max(1 / 240, dt));
+        const kXZ = 1 - Math.exp(-stepDt * 28);
+        const kY = 1 - Math.exp(-stepDt * 18);
+        const nx = pose.x + (tx - pose.x) * kXZ;
+        const ny = pose.y + (ty - pose.y) * kY;
+        const nz = pose.z + (tz - pose.z) * kXZ;
+        const vx = (nx - pose.x) / stepDt;
+        const vz = (nz - pose.z) / stepDt;
+        const wantRx = THREE.MathUtils.clamp(vz * 0.016, -0.12, 0.12);
+        const wantRz = THREE.MathUtils.clamp(-vx * 0.016, -0.12, 0.12);
+        const kRot = 1 - Math.exp(-stepDt * 16);
+        pose.x = nx;
+        pose.y = ny;
+        pose.z = nz;
+        pose.rx += (wantRx - pose.rx) * kRot;
+        pose.rz += (wantRz - pose.rz) * kRot;
+      }
+      animating = true;
+      continue;
+    }
+
+    if (wasDragged && moved) {
+      const dist = Math.hypot(next.c - prev.c, next.r - prev.r);
+      if (reducedMotion || dist > 2.5) {
+        state.anims[i] = null;
+      } else {
+        const horiz = Math.hypot(target.x - pose.x, target.z - pose.z);
+        const duration = THREE.MathUtils.clamp(0.12 + horiz * 0.06, 0.12, 0.18);
+        const lead = Math.min(Math.max(0, dt), duration * 0.25);
+        state.anims[i] = {
+          kind: 'place',
+          fromX: pose.x, fromY: pose.y, fromZ: pose.z,
+          fromRx: pose.rx, fromRz: pose.rz,
+          toX: target.x, toZ: target.z,
+          start: t - lead, duration, arc: 0,
+        };
+      }
+    } else if (wasDragged && !moved) {
+      const horiz = Math.hypot(target.x - pose.x, target.z - pose.z);
+      const lift = Math.abs(pose.y - SURFACE);
+      if (!reducedMotion && (horiz > 0.015 || lift > 0.015)) {
+        const duration = THREE.MathUtils.clamp(0.14 + horiz * 0.04, 0.14, 0.24);
+        const lead = Math.min(Math.max(0, dt), duration * 0.25);
+        state.anims[i] = {
+          kind: 'return',
+          fromX: pose.x, fromY: pose.y, fromZ: pose.z,
+          fromRx: pose.rx, fromRz: pose.rz,
+          toX: target.x, toZ: target.z,
+          start: t - lead, duration, arc: horiz > 0.8 ? 0.14 : 0,
+        };
+      } else {
+        state.anims[i] = null;
+      }
+    } else if (moved) {
+      const dist = Math.hypot(next.c - prev.c, next.r - prev.r);
+      if (!reducedMotion && dist <= 2.5) {
+        const duration = dist > 1.2 ? 0.26 : 0.20;
+        const lead = Math.min(Math.max(0, dt), duration * 0.25);
+        state.anims[i] = {
+          kind: 'hop',
+          fromX: pose.x, fromY: pose.y, fromZ: pose.z,
+          fromRx: pose.rx, fromRz: pose.rz,
+          toX: target.x, toZ: target.z,
+          start: t - lead, duration, arc: dist > 1.2 ? 0.48 : 0.22,
+        };
+      } else {
+        state.anims[i] = null;
+      }
+    }
+
+    const anim = state.anims[i];
+    if (anim && !reducedMotion) {
+      const raw = Math.min(1, Math.max(0, (t - anim.start) / anim.duration));
+      if (raw < 1) {
+        animating = true;
+        if (anim.kind === 'hop') {
+          const u = raw * raw * (3 - 2 * raw);
+          pose.x = anim.fromX + (anim.toX - anim.fromX) * u;
+          pose.z = anim.fromZ + (anim.toZ - anim.fromZ) * u;
+          const baseY = anim.fromY + (SURFACE - anim.fromY) * u;
+          pose.y = baseY + 4 * u * (1 - u) * anim.arc;
+          const dx = anim.toX - anim.fromX;
+          const dz = anim.toZ - anim.fromZ;
+          const len = Math.hypot(dx, dz) || 1;
+          const tilt = Math.sin(u * Math.PI) * 0.09;
+          pose.rx = anim.fromRx * (1 - u) + (dz / len) * tilt;
+          pose.rz = anim.fromRz * (1 - u) - (dx / len) * tilt;
+          continue;
+        }
+        const u = 1 - (1 - raw) ** 3;
+        pose.x = anim.fromX + (anim.toX - anim.fromX) * u;
+        pose.z = anim.fromZ + (anim.toZ - anim.fromZ) * u;
+        const baseY = anim.fromY + (SURFACE - anim.fromY) * u;
+        pose.y = baseY + 4 * u * (1 - u) * anim.arc;
+        pose.rx = anim.fromRx * (1 - u);
+        pose.rz = anim.fromRz * (1 - u);
+        continue;
+      }
+      state.anims[i] = null;
+    }
+    pose.x = target.x;
+    pose.y = SURFACE;
+    pose.z = target.z;
+    pose.rx = 0;
+    pose.rz = 0;
+  }
+
+  state.lastPawns = [{ ...pawns[0] }, { ...pawns[1] }];
+  state.lastFenceCount = fenceCount;
+  state.lastDragging = draggingPawn;
+  return animating;
+}
+
 export class Scene {
   readonly renderer: THREE.WebGLRenderer;
   readonly scene = new THREE.Scene();
@@ -268,6 +484,7 @@ export class Scene {
   private plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -SURFACE);
   private tmp = new THREE.Vector3();
   private key: THREE.DirectionalLight;
+  private fill: THREE.DirectionalLight;
   private pawns: THREE.Mesh[] = [];
   private handPawn: THREE.Mesh;
   private ghostPawn: THREE.Mesh;
@@ -284,6 +501,8 @@ export class Scene {
   private room: THREE.Group;
   private topBoard: THREE.Mesh;
   private topTable: THREE.Texture;
+  private coordinates: THREE.Mesh;
+  private coordTextures: [THREE.Texture, THREE.Texture];
   private references: [ReferenceScene, ReferenceScene];
   private topScene: TopScene;
   private get reference() { return this.references[this.player]; }
@@ -291,6 +510,9 @@ export class Scene {
   private shadowState = '';
   private openingDice: OpeningDie[] = [];
   private faceLabels: THREE.SpriteMaterial[] = [];
+  private logicalPawns: [Cell, Cell] = [{ c: 4, r: 0 }, { c: 4, r: 8 }];
+  private pawnModeKey = '';
+  private pawnVisuals = createPawnVisualState();
 
   constructor(el: HTMLElement, private dprCap = 2) {
     this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' });
@@ -333,10 +555,10 @@ export class Scene {
     // A shadow light with no map yet makes every receiver fail the first draw.
     this.key.shadow.needsUpdate = true;
     this.scene.add(this.key);
-    const fill = new THREE.DirectionalLight(0xd9c2a4, 0.45);
-    fill.layers.enable(1);
-    fill.position.set(6, 5, 4);
-    this.scene.add(fill);
+    this.fill = new THREE.DirectionalLight(0xd9c2a4, 0.45);
+    this.fill.layers.enable(1);
+    this.fill.position.set(6, 5, 4);
+    this.scene.add(this.fill);
 
     const tableWood = woodTexture([96, 62, 40], false);
     new THREE.ImageLoader().load(new URL('./assets/salon-walnut.webp', import.meta.url).href, (image) => {
@@ -368,7 +590,7 @@ export class Scene {
     grooves.receiveShadow = true;
     this.scene.add(grooves);
     const tileGeo = new RoundedBoxGeometry(0.916, 0.11, 0.916, 1, 0.024);
-    const tiles = new THREE.InstancedMesh(tileGeo, new THREE.MeshStandardMaterial({ map: woodTexture([184, 155, 115], false), roughness: 0.4 }), 81);
+    const tiles = new THREE.InstancedMesh(tileGeo, new THREE.MeshStandardMaterial({ map: woodTexture([186, 144, 96], false), roughness: 0.4 }), 81);
     tiles.name = 'board-tiles';
     const tile = new THREE.Object3D();
     for (let r = 0; r < 9; r++) for (let c = 0; c < 9; c++) {
@@ -399,10 +621,11 @@ export class Scene {
       goal.position.set(0, 0.027, side * 4.67);
       this.scene.add(goal);
     }
-    const coordinates = new THREE.Mesh(new THREE.PlaneGeometry(10.25, 10.25), new THREE.MeshBasicMaterial({ map: coordinateTexture(), transparent: true, depthWrite: false, opacity: 0.8 }));
-    coordinates.rotation.x = -Math.PI / 2;
-    coordinates.position.y = 0.035;
-    this.scene.add(coordinates);
+    this.coordTextures = [coordinateTexture(false), coordinateTexture(true)];
+    this.coordinates = new THREE.Mesh(new THREE.PlaneGeometry(10.25, 10.25), new THREE.MeshBasicMaterial({ map: this.coordTextures[0], transparent: true, depthWrite: false, opacity: 0.8 }));
+    this.coordinates.rotation.x = -Math.PI / 2;
+    this.coordinates.position.y = 0.035;
+    this.scene.add(this.coordinates);
 
     this.decor = studyProps(envMap);
     this.scene.add(this.decor);
@@ -606,8 +829,13 @@ export class Scene {
     this.ray.setFromCamera(this.ndc, this.camera);
     if (pickingUp) {
       const pawn = this.ray.intersectObjects(this.pawns, true)[0]?.object;
-      const root = this.pawns.find(mesh => mesh === pawn || mesh.children.includes(pawn!));
-      if (root?.visible) return { x: root.position.x, z: root.position.z };
+      const idx = this.pawns.findIndex(mesh => mesh === pawn || mesh.children.includes(pawn!));
+      if (idx >= 0 && this.pawns[idx]?.visible) {
+        if (this.logicalPawns?.[idx]) {
+          return cellCenter(this.logicalPawns[idx].c, this.logicalPawns[idx].r);
+        }
+        return { x: this.pawns[idx].position.x, z: this.pawns[idx].position.z };
+      }
     }
     const hit = this.ray.ray.intersectPlane(this.plane, this.hitV);
     if (!hit) return null;
@@ -671,26 +899,49 @@ export class Scene {
       this.reference.render(s);
       frameReferenceCamera(this.angledCamera, innerWidth, innerHeight);
     }
+    const lightDir = sceneLightDirection(hybrid, this.player);
+    this.key.position.set(-5.2 * lightDir, 11, 6.4 * lightDir);
+    this.fill.position.set(6 * lightDir, 5, 4 * lightDir);
+    const reverse3D = !hybrid && this.player === 1;
+    const coordMat = this.coordinates.material as THREE.MeshBasicMaterial;
+    const targetCoordMap = this.coordTextures[reverse3D ? 1 : 0];
+    if (coordMat.map !== targetCoordMap) {
+      coordMat.map = targetCoordMap;
+      coordMat.needsUpdate = true;
+    }
+    this.coordinates.rotation.z = reverse3D ? Math.PI : 0;
+    const modeKey = `${hybrid}:${this.view}:${this.player}`;
+    if (modeKey !== this.pawnModeKey) {
+      this.pawnModeKey = modeKey;
+      this.pawnVisuals.initialized = false;
+    }
+    this.logicalPawns = [{ ...s.pawns[0] }, { ...s.pawns[1] }];
     const motionT = this.reducedMotion.matches ? 0 : s.t;
-    const draggingPawn = s.drag?.kind === 'pawn' ? s.drag.owner : null;
+    const animating = updatePawnVisuals(
+      this.pawnVisuals,
+      s.pawns,
+      s.fences.length,
+      s.drag,
+      s.t,
+      s.dt,
+      this.reducedMotion.matches,
+    );
     for (let i = 0; i < 2; i++) {
       const mesh = this.pawns[i];
       (mesh.material as THREE.MeshPhysicalMaterial).color.set((i === 0) !== (hybrid && this.player === 1) ? PALE : DARK);
-      const cell = s.pawns[i as Player];
-      const p = cellCenter(cell.c, cell.r);
-      mesh.visible = draggingPawn !== i;
-      mesh.position.set(p.x, SURFACE, p.z);
+      const pose = this.pawnVisuals.poses[i];
+      mesh.visible = true;
+      mesh.position.set(pose.x, pose.y, pose.z);
+      mesh.rotation.set(pose.rx, 0, pose.rz);
     }
-    if (s.drag?.kind === 'pawn') {
-      this.handPawn.visible = true;
-      const lost = !s.drag.cell;
-      (this.handPawn.material as THREE.MeshStandardMaterial).color.set(lost ? 0xc4473a : (s.drag.owner === 0) !== (hybrid && this.player === 1) ? PALE : DARK);
-      this.handPawn.position.set(s.drag.x, SURFACE + 0.72, s.drag.z);
-    } else this.handPawn.visible = false;
+    this.handPawn.visible = false;
 
-    const showGhostPawn = s.drag?.kind === 'pawn' && s.drag.cell;
-    this.ghostPawn.visible = !!showGhostPawn;
-    if (s.drag?.kind === 'pawn' && s.drag.cell) {
+    const ownPawnCell = s.drag?.kind === 'pawn' && s.drag.cell
+      && s.drag.cell.c === s.pawns[s.drag.owner].c
+      && s.drag.cell.r === s.pawns[s.drag.owner].r;
+    const showGhostPawn = !hybrid && s.drag?.kind === 'pawn' && !!s.drag.cell && !ownPawnCell;
+    this.ghostPawn.visible = showGhostPawn;
+    if (showGhostPawn && s.drag?.cell) {
       const p = cellCenter(s.drag.cell.c, s.drag.cell.r);
       this.ghostPawn.position.set(p.x, SURFACE, p.z);
       const mat = this.ghostPawn.material as THREE.MeshStandardMaterial;
@@ -722,14 +973,9 @@ export class Scene {
       for (let i = 0; i < 10; i++) {
         const mesh = this.stock[id][i];
         mesh.visible = i < n;
-        const along = stockOffset(i, rack.along === 'z');
-        if (rack.along === 'z') {
-          mesh.position.set(rack.x, STOCK_Y, rack.z - along);
-          mesh.rotation.y = 0;
-        } else {
-          mesh.position.set(rack.x + along, STOCK_Y, rack.z);
-          mesh.rotation.y = Math.PI / 2;
-        }
+        const slot = stockSlot(rack, i);
+        mesh.position.set(slot.x, STOCK_Y, slot.z);
+        mesh.rotation.y = rack.along === 'z' ? 0 : Math.PI / 2;
       }
     }
 
@@ -761,12 +1007,11 @@ export class Scene {
       pip.position.set(p.x, SURFACE + 0.03, p.z);
     }
 
-    const active = s.drag?.kind === 'pawn' ? null : s.pawns[s.turn];
-    if (active && s.drag?.kind !== 'pawn') {
-      const p = cellCenter(active.c, active.r);
+    if (s.drag?.kind !== 'pawn') {
+      const pos = this.pawns[s.turn].position;
       const pulse = 1 + Math.sin(motionT * 2.4) * 0.04;
       this.turnRing.visible = true;
-      this.turnRing.position.set(p.x, SURFACE + 0.03, p.z);
+      this.turnRing.position.set(pos.x, SURFACE + 0.03, pos.z);
       this.turnRing.scale.setScalar(s.thinking ? pulse * 1.08 : pulse);
     } else this.turnRing.visible = false;
 
@@ -802,8 +1047,9 @@ export class Scene {
       }
     }
     const shadowState = [s.pawns[0].c, s.pawns[0].r, s.pawns[1].c, s.pawns[1].r,
-      s.fences.length, ...s.remaining, s.drag?.kind, s.drag?.x, s.drag?.z, s.drag?.o].join(',');
-    if (shadowState !== this.shadowState) {
+      s.fences.length, ...s.remaining, s.drag?.kind, s.drag?.x, s.drag?.z, s.drag?.o,
+      lightDir, animating ? 'anim' : 'idle'].join(',');
+    if (shadowState !== this.shadowState || animating) {
       this.key.shadow.needsUpdate = true;
       this.shadowState = shadowState;
     }
